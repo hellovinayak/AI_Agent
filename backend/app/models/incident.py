@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from typing import List, Literal, Optional
 
+# pyrefly: ignore [missing-import]
 from pydantic import BaseModel, Field
 
 from app.models.alert import ResponseAction

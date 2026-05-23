@@ -49,6 +49,101 @@ async def simulate_api_abuse() -> Dict[str, Any]:
     return {"job_id": job_id, "status": "started", "scenario": "api_abuse"}
 
 
+@router.post("/api/simulate/ransomware")
+async def simulate_ransomware() -> Dict[str, Any]:
+    """Launch a ransomware simulation as a background task."""
+    job_id = f"SIM-{uuid.uuid4().hex[:8].upper()}"
+    asyncio.create_task(_run_safe(simulator.run_ransomware, job_id))
+    return {"job_id": job_id, "status": "started", "scenario": "ransomware"}
+
+
+@router.post("/api/simulate/ddos")
+async def simulate_ddos() -> Dict[str, Any]:
+    """Launch a DDoS simulation as a background task."""
+    job_id = f"SIM-{uuid.uuid4().hex[:8].upper()}"
+    asyncio.create_task(_run_safe(simulator.run_ddos, job_id))
+    return {"job_id": job_id, "status": "started", "scenario": "ddos"}
+
+
+@router.post("/api/simulate/sqli")
+async def simulate_sqli() -> Dict[str, Any]:
+    """Launch a SQLi simulation as a background task."""
+    job_id = f"SIM-{uuid.uuid4().hex[:8].upper()}"
+    asyncio.create_task(_run_safe(simulator.run_sqli, job_id))
+    return {"job_id": job_id, "status": "started", "scenario": "sqli"}
+
+
+@router.post("/api/simulate/password-spraying")
+async def simulate_password_spraying() -> Dict[str, Any]:
+    """Launch a password spraying simulation as a background task."""
+    job_id = f"SIM-{uuid.uuid4().hex[:8].upper()}"
+    asyncio.create_task(_run_safe(simulator.run_password_spraying, job_id))
+    return {"job_id": job_id, "status": "started", "scenario": "password_spraying"}
+
+
+@router.post("/api/simulate/impossible-travel")
+async def simulate_impossible_travel() -> Dict[str, Any]:
+    """Launch an impossible travel simulation as a background task."""
+    job_id = f"SIM-{uuid.uuid4().hex[:8].upper()}"
+    asyncio.create_task(_run_safe(simulator.run_impossible_travel, job_id))
+    return {"job_id": job_id, "status": "started", "scenario": "impossible_travel"}
+
+
+@router.post("/api/simulate/beaconing")
+async def simulate_beaconing() -> Dict[str, Any]:
+    """Launch a beaconing simulation as a background task."""
+    job_id = f"SIM-{uuid.uuid4().hex[:8].upper()}"
+    asyncio.create_task(_run_safe(simulator.run_beaconing, job_id))
+    return {"job_id": job_id, "status": "started", "scenario": "beaconing"}
+
+
+@router.post("/api/simulate/dns-tunneling")
+async def simulate_dns_tunneling() -> Dict[str, Any]:
+    """Launch a DNS tunneling simulation as a background task."""
+    job_id = f"SIM-{uuid.uuid4().hex[:8].upper()}"
+    asyncio.create_task(_run_safe(simulator.run_dns_tunneling, job_id))
+    return {"job_id": job_id, "status": "started", "scenario": "dns_tunneling"}
+
+
+@router.post("/api/simulate/cloud-metadata")
+async def simulate_cloud_metadata() -> Dict[str, Any]:
+    """Launch a cloud metadata abuse simulation as a background task."""
+    job_id = f"SIM-{uuid.uuid4().hex[:8].upper()}"
+    asyncio.create_task(_run_safe(simulator.run_cloud_metadata_abuse, job_id))
+    return {"job_id": job_id, "status": "started", "scenario": "cloud_metadata_abuse"}
+
+
+@router.post("/api/simulate/iam-privilege")
+async def simulate_iam_privilege() -> Dict[str, Any]:
+    """Launch an IAM privilege escalation simulation as a background task."""
+    job_id = f"SIM-{uuid.uuid4().hex[:8].upper()}"
+    asyncio.create_task(_run_safe(simulator.run_iam_privilege_escalation, job_id))
+    return {"job_id": job_id, "status": "started", "scenario": "iam_privilege_escalation"}
+
+
+@router.post("/api/simulate/staging-exfiltration")
+async def simulate_staging_exfiltration() -> Dict[str, Any]:
+    """Launch a staging before exfiltration simulation as a background task."""
+    job_id = f"SIM-{uuid.uuid4().hex[:8].upper()}"
+    asyncio.create_task(_run_safe(simulator.run_staging_before_exfiltration, job_id))
+    return {"job_id": job_id, "status": "started", "scenario": "staging_exfiltration"}
+
+
+@router.post("/api/simulate/slow-drip")
+async def simulate_slow_drip() -> Dict[str, Any]:
+    """Launch a slow-drip exfiltration simulation as a background task."""
+    job_id = f"SIM-{uuid.uuid4().hex[:8].upper()}"
+    asyncio.create_task(_run_safe(simulator.run_slow_drip_exfiltration, job_id))
+    return {"job_id": job_id, "status": "started", "scenario": "slow_drip_exfiltration"}
+
+
+@router.post("/api/simulate/honeypot")
+async def simulate_honeypot() -> Dict[str, Any]:
+    """Launch a honeypot access simulation as a background task."""
+    job_id = f"SIM-{uuid.uuid4().hex[:8].upper()}"
+    asyncio.create_task(_run_safe(simulator.run_honeypot_access, job_id))
+    return {"job_id": job_id, "status": "started", "scenario": "honeypot_access"}
+
 @router.delete("/api/demo/reset")
 async def demo_reset() -> Dict[str, Any]:
     """Wipe all data and reset in-memory state for a fresh demo."""

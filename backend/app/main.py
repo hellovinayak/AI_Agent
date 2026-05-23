@@ -10,7 +10,9 @@ import time
 import logging
 from contextlib import asynccontextmanager
 
+# pyrefly: ignore [missing-import]
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
+# pyrefly: ignore [missing-import]
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.core.config import settings

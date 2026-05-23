@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import toast from 'react-hot-toast';
-import { ShieldAlert, Play, RotateCcw, Flame, Skull, UserCheck, Key } from 'lucide-react';
+import { ShieldAlert, Play, RotateCcw, Flame, Skull, UserCheck, Key, Users, PlaneTakeoff, Radio, GlobeLock, CloudCog, ShieldHalf, FolderArchive, Droplets } from 'lucide-react';
 import { api } from '../services/api';
 import { useStore } from '../stores/useStore';
 
@@ -37,6 +37,69 @@ export function SimulatorPanel() {
       icon: Key,
       color: 'from-blue-600 to-cyan-600 shadow-blue-950/40',
       action: api.simulateApiAbuse,
+    },
+    {
+      id: 'pass_spray',
+      name: 'Password Spraying',
+      icon: Users,
+      color: 'from-orange-600 to-amber-600 shadow-orange-950/40',
+      action: api.simulatePasswordSpraying,
+    },
+    {
+      id: 'impossible_travel',
+      name: 'Impossible Travel',
+      icon: PlaneTakeoff,
+      color: 'from-violet-600 to-fuchsia-600 shadow-violet-950/40',
+      action: api.simulateImpossibleTravel,
+    },
+    {
+      id: 'beaconing',
+      name: 'C2 Beaconing',
+      icon: Radio,
+      color: 'from-pink-600 to-rose-600 shadow-pink-950/40',
+      action: api.simulateBeaconing,
+    },
+    {
+      id: 'dns_tunnel',
+      name: 'DNS Tunneling',
+      icon: GlobeLock,
+      color: 'from-sky-600 to-blue-600 shadow-sky-950/40',
+      action: api.simulateDnsTunneling,
+    },
+    {
+      id: 'cloud_meta',
+      name: 'Cloud Metadata',
+      icon: CloudCog,
+      color: 'from-indigo-600 to-blue-600 shadow-indigo-950/40',
+      action: api.simulateCloudMetadata,
+    },
+    {
+      id: 'iam_priv',
+      name: 'IAM Privilege',
+      icon: ShieldHalf,
+      color: 'from-yellow-600 to-orange-600 shadow-yellow-950/40',
+      action: api.simulateIamPrivilege,
+    },
+    {
+      id: 'staging_exfil',
+      name: 'Staging Exfil',
+      icon: FolderArchive,
+      color: 'from-lime-600 to-green-600 shadow-lime-950/40',
+      action: api.simulateStagingExfiltration,
+    },
+    {
+      id: 'slow_drip',
+      name: 'Slow-Drip Exfil',
+      icon: Droplets,
+      color: 'from-cyan-600 to-teal-600 shadow-cyan-950/40',
+      action: api.simulateSlowDrip,
+    },
+    {
+      id: 'honeypot',
+      name: 'Honeypot Trap',
+      icon: ShieldAlert,
+      color: 'from-rose-600 to-pink-600 shadow-rose-950/40',
+      action: api.simulateHoneypot,
     },
   ];
 
@@ -88,7 +151,7 @@ export function SimulatorPanel() {
         </div>
       </div>
 
-      <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-4">
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
         {scenarios.map((sc) => {
           const Icon = sc.icon;
           const isCurrent = running === sc.id;
@@ -97,9 +160,8 @@ export function SimulatorPanel() {
               key={sc.id}
               onClick={() => handleSimulate(sc)}
               disabled={running !== null || resetting}
-              className={`group flex items-center justify-between p-4 rounded-xl border border-white/5 bg-gradient-to-br ${
-                sc.color
-              } hover:scale-[1.02] active:scale-[0.98] transition-all duration-200 shadow-lg text-left disabled:opacity-50 disabled:scale-100 disabled:pointer-events-none`}
+              className={`group flex items-center justify-between p-4 rounded-xl border border-white/5 bg-gradient-to-br ${sc.color
+                } hover:scale-[1.02] active:scale-[0.98] transition-all duration-200 shadow-lg text-left disabled:opacity-50 disabled:scale-100 disabled:pointer-events-none`}
             >
               <div className="flex items-center space-x-3">
                 <span className="flex h-10 w-10 items-center justify-center rounded-lg bg-white/10 text-white border border-white/10 group-hover:rotate-6 transition-transform">

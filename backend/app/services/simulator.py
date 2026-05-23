@@ -436,3 +436,543 @@ async def run_api_abuse() -> str:
 
     logger.info("API-abuse simulation %s completed", job_id)
     return job_id
+
+# ═════════════════════════════════════════════════════════════════════════════
+#  SCENARIO 5 — RANSOMWARE
+# ═════════════════════════════════════════════════════════════════════════════
+
+async def run_ransomware() -> str:
+    """Simulate a ransomware attack: mass file encryption and VSS deletion.
+
+    Sequence:
+      - High volume of file writes (encryption)
+      - Appending .encrypted extension
+      - Shadow copy deletion (vssadmin)
+    """
+    job_id = f"SIM-{uuid.uuid4().hex[:8].upper()}"
+    logger.info("Starting ransomware simulation %s", job_id)
+
+    user = random.choice(_USERS)
+    device = random.choice(_DEVICES)
+    internal_ip = random.choice(_INTERNAL_IPS)
+    location = random.choice(_INTERNAL_LOCATIONS)
+    offset = 0
+
+    # Phase 1 — Mass file encryption
+    for i in range(5):
+        log = LogEntry(
+            timestamp=_now_iso(offset),
+            user=user,
+            ip_address=internal_ip,
+            location=location,
+            device=device,
+            event_type="file_access",
+            severity="high",
+            raw_message=(
+                f"Ransomware activity detected on {device}: Process 'svchost.exe' "
+                f"rapidly modified {random.randint(1000, 5000)} files in C:\\Users\\{user}\\Documents, "
+                f"appending '.locky' extension. Entropy of written files is highly elevated (0.98)."
+            ),
+        )
+        await detection_engine.process_log(log, simulation_type="ransomware")
+        offset += random.randint(1, 3)
+        await asyncio.sleep(_rand(0.2, 0.4))
+
+    # Phase 2 — Volume Shadow Copy deletion
+    log = LogEntry(
+        timestamp=_now_iso(offset),
+        user=user,
+        ip_address=internal_ip,
+        location=location,
+        device=device,
+        event_type="process_execution",
+        severity="critical",
+        raw_message=(
+            f"Destructive action on {device}: Process 'vssadmin.exe' executed with arguments "
+            f"'delete shadows /all /quiet'. This is a known precursor to ransomware to prevent recovery."
+        ),
+    )
+    await detection_engine.process_log(log, simulation_type="ransomware")
+    
+    logger.info("Ransomware simulation %s completed", job_id)
+    return job_id
+
+
+# ═════════════════════════════════════════════════════════════════════════════
+#  SCENARIO 6 — DDOS ATTACK
+# ═════════════════════════════════════════════════════════════════════════════
+
+async def run_ddos() -> str:
+    """Simulate a DDoS attack against web properties."""
+    job_id = f"SIM-{uuid.uuid4().hex[:8].upper()}"
+    logger.info("Starting DDoS simulation %s", job_id)
+
+    target_device = "WAF-PERIMETER-01"
+    offset = 0
+
+    for i in range(15):
+        src_ip = f"{random.randint(1, 255)}.{random.randint(1, 255)}.{random.randint(1, 255)}.{random.randint(1, 255)}"
+        log = LogEntry(
+            timestamp=_now_iso(offset),
+            user="anonymous",
+            ip_address=src_ip,
+            location=random.choice(_SUSPICIOUS_LOCATIONS),
+            device=target_device,
+            event_type="network_connection",
+            severity="medium",
+            raw_message=(
+                f"High volume SYN flood detected targeting {target_device}. "
+                f"Rate: {random.randint(50000, 150000)} pps from distributed sources including {src_ip}. "
+                f"Connection tracking table at 98% capacity."
+            ),
+        )
+        await detection_engine.process_log(log, simulation_type="ddos")
+        offset += 1
+        await asyncio.sleep(_rand(0.1, 0.2))
+
+    logger.info("DDoS simulation %s completed", job_id)
+    return job_id
+
+
+# ═════════════════════════════════════════════════════════════════════════════
+#  SCENARIO 7 — SQL INJECTION (SQLi)
+# ═════════════════════════════════════════════════════════════════════════════
+
+async def run_sqli() -> str:
+    """Simulate a Web App SQL Injection attack."""
+    job_id = f"SIM-{uuid.uuid4().hex[:8].upper()}"
+    logger.info("Starting SQLi simulation %s", job_id)
+
+    src_ip = random.choice(_SUSPICIOUS_IPS)
+    location = random.choice(_SUSPICIOUS_LOCATIONS)
+    device = "WEBSERVER-01"
+    offset = 0
+
+    payloads = [
+        "' OR 1=1 --",
+        "admin' --",
+        "1; DROP TABLE users",
+        "UNION SELECT null, username, password FROM users"
+    ]
+
+    for i in range(8):
+        log = LogEntry(
+            timestamp=_now_iso(offset),
+            user="anonymous",
+            ip_address=src_ip,
+            location=location,
+            device=device,
+            event_type="api_request",
+            severity="high",
+            raw_message=(
+                f"Web Application Firewall alert: SQL Injection payload detected from {src_ip}. "
+                f"Request URI: /login.php?user={random.choice(payloads)}. "
+                f"Matched regex pattern for SQLi."
+            ),
+        )
+        await detection_engine.process_log(log, simulation_type="sqli")
+        offset += random.randint(1, 3)
+        await asyncio.sleep(_rand(0.2, 0.5))
+
+    logger.info("SQLi simulation %s completed", job_id)
+    return job_id
+
+# ═════════════════════════════════════════════════════════════════════════════
+#  SCENARIO 8 — PASSWORD SPRAYING
+# ═════════════════════════════════════════════════════════════════════════════
+
+async def run_password_spraying() -> str:
+    """Simulate a password spraying attack.
+    Sequence: 1-2 failed logins across many different user accounts from the same IP.
+    """
+    job_id = f"SIM-{uuid.uuid4().hex[:8].upper()}"
+    logger.info("Starting password spraying simulation %s", job_id)
+
+    src_ip = random.choice(_SUSPICIOUS_IPS)
+    location = random.choice(_SUSPICIOUS_LOCATIONS)
+    device = "UNKNOWN-DEVICE"
+    offset = 0
+
+    target_users = [f"user.{i:03d}" for i in range(20)]
+    for u in target_users:
+        log = LogEntry(
+            timestamp=_now_iso(offset),
+            user=u,
+            ip_address=src_ip,
+            location=location,
+            device=device,
+            event_type="authentication_failure",
+            severity="medium",
+            raw_message=(
+                f"Failed login attempt for user '{u}' from {src_ip} "
+                f"({location['city']}, {location['country']}). "
+                f"Reason: invalid credentials. Auth method: password."
+            ),
+        )
+        await detection_engine.process_log(log, simulation_type="password_spraying")
+        offset += random.randint(1, 3)
+        await asyncio.sleep(_rand(0.1, 0.3))
+
+    logger.info("Password spraying simulation %s completed", job_id)
+    return job_id
+
+# ═════════════════════════════════════════════════════════════════════════════
+#  SCENARIO 9 — IMPOSSIBLE TRAVEL
+# ═════════════════════════════════════════════════════════════════════════════
+
+async def run_impossible_travel() -> str:
+    """Simulate impossible travel.
+    Sequence: Successful login from two distant locations within a short timeframe.
+    """
+    job_id = f"SIM-{uuid.uuid4().hex[:8].upper()}"
+    logger.info("Starting impossible travel simulation %s", job_id)
+
+    user = random.choice(_USERS)
+    device = random.choice(_DEVICES)
+    
+    loc1 = {"country": "India", "city": "Mumbai"}
+    ip1 = "103.112.50.21"
+    
+    loc2 = {"country": "UK", "city": "London"}
+    ip2 = "212.115.109.11"
+    
+    offset = 0
+
+    log1 = LogEntry(
+        timestamp=_now_iso(offset),
+        user=user,
+        ip_address=ip1,
+        location=loc1,
+        device=device,
+        event_type="login_success",
+        severity="low",
+        raw_message=f"Successful login for user '{user}' from {ip1} ({loc1['city']}, {loc1['country']})."
+    )
+    await detection_engine.process_log(log1, simulation_type="impossible_travel")
+    await asyncio.sleep(0.5)
+
+    offset += 1200 # 20 minutes later
+
+    log2 = LogEntry(
+        timestamp=_now_iso(offset),
+        user=user,
+        ip_address=ip2,
+        location=loc2,
+        device=device,
+        event_type="login_success",
+        severity="high",
+        raw_message=f"Successful login for user '{user}' from {ip2} ({loc2['city']}, {loc2['country']})."
+    )
+    await detection_engine.process_log(log2, simulation_type="impossible_travel")
+    
+    logger.info("Impossible travel simulation %s completed", job_id)
+    return job_id
+
+# ═════════════════════════════════════════════════════════════════════════════
+#  SCENARIO 10 — BEACONING
+# ═════════════════════════════════════════════════════════════════════════════
+
+async def run_beaconing() -> str:
+    """Simulate C2 beaconing.
+    Sequence: Outbound connections to external IP at highly regular intervals.
+    """
+    job_id = f"SIM-{uuid.uuid4().hex[:8].upper()}"
+    logger.info("Starting beaconing simulation %s", job_id)
+
+    user = random.choice(_USERS)
+    device = random.choice(_DEVICES)
+    internal_ip = random.choice(_INTERNAL_IPS)
+    c2_ip = random.choice(_MALWARE_C2_IPS)
+    location = random.choice(_INTERNAL_LOCATIONS)
+    offset = 0
+
+    for i in range(10):
+        log = LogEntry(
+            timestamp=_now_iso(offset),
+            user=user,
+            ip_address=internal_ip,
+            location=location,
+            device=device,
+            event_type="network_connection",
+            severity="medium",
+            raw_message=(
+                f"Outbound connection from {device} ({internal_ip}) to {c2_ip}:443. "
+                f"Bytes sent: {random.randint(100, 150)}. Bytes received: {random.randint(100, 150)}. "
+                f"Periodic heartbeat beacon detected."
+            ),
+        )
+        await detection_engine.process_log(log, simulation_type="beaconing")
+        offset += 60 + random.uniform(-1, 1) # Regular 60s interval
+        await asyncio.sleep(0.2)
+
+    logger.info("Beaconing simulation %s completed", job_id)
+    return job_id
+
+# ═════════════════════════════════════════════════════════════════════════════
+#  SCENARIO 11 — DNS TUNNELING
+# ═════════════════════════════════════════════════════════════════════════════
+
+async def run_dns_tunneling() -> str:
+    """Simulate DNS tunneling for data exfiltration."""
+    job_id = f"SIM-{uuid.uuid4().hex[:8].upper()}"
+    logger.info("Starting DNS tunneling simulation %s", job_id)
+
+    user = random.choice(_USERS)
+    device = random.choice(_DEVICES)
+    internal_ip = random.choice(_INTERNAL_IPS)
+    location = random.choice(_INTERNAL_LOCATIONS)
+    offset = 0
+
+    for i in range(15):
+        subdomain = uuid.uuid4().hex + uuid.uuid4().hex
+        log = LogEntry(
+            timestamp=_now_iso(offset),
+            user=user,
+            ip_address=internal_ip,
+            location=location,
+            device=device,
+            event_type="dns_query",
+            severity="high",
+            raw_message=(
+                f"DNS Query: {subdomain}.evil-domain.com. "
+                f"High entropy subdomain detected from {device} ({internal_ip}). "
+                f"Potential DNS tunneling payload."
+            ),
+        )
+        await detection_engine.process_log(log, simulation_type="dns_tunneling")
+        offset += random.randint(1, 3)
+        await asyncio.sleep(0.1)
+
+    logger.info("DNS tunneling simulation %s completed", job_id)
+    return job_id
+
+# ═════════════════════════════════════════════════════════════════════════════
+#  SCENARIO 12 — CLOUD METADATA ABUSE
+# ═════════════════════════════════════════════════════════════════════════════
+
+async def run_cloud_metadata_abuse() -> str:
+    """Simulate cloud metadata service abuse (SSRF)."""
+    job_id = f"SIM-{uuid.uuid4().hex[:8].upper()}"
+    logger.info("Starting Cloud metadata abuse simulation %s", job_id)
+
+    device = "EC2-WEB-PROD"
+    internal_ip = random.choice(_INTERNAL_IPS)
+    location = random.choice(_INTERNAL_LOCATIONS)
+    offset = 0
+
+    log = LogEntry(
+        timestamp=_now_iso(offset),
+        user="www-data",
+        ip_address=internal_ip,
+        location=location,
+        device=device,
+        event_type="api_request",
+        severity="critical",
+        raw_message=(
+            f"HTTP request from web application process on {device} ({internal_ip}) "
+            f"targeting 169.254.169.254/latest/meta-data/iam/security-credentials/. "
+            f"Potential SSRF attempting IAM credential theft."
+        ),
+    )
+    await detection_engine.process_log(log, simulation_type="cloud_metadata_abuse")
+    await asyncio.sleep(0.5)
+
+    logger.info("Cloud metadata abuse simulation %s completed", job_id)
+    return job_id
+
+# ═════════════════════════════════════════════════════════════════════════════
+#  SCENARIO 13 — IAM PRIVILEGE ESCALATION
+# ═════════════════════════════════════════════════════════════════════════════
+
+async def run_iam_privilege_escalation() -> str:
+    """Simulate IAM privilege escalation in the cloud."""
+    job_id = f"SIM-{uuid.uuid4().hex[:8].upper()}"
+    logger.info("Starting IAM Privilege Escalation simulation %s", job_id)
+
+    user = "dev.contractor"
+    src_ip = random.choice(_SUSPICIOUS_IPS)
+    location = random.choice(_SUSPICIOUS_LOCATIONS)
+    device = "AWS-CLI"
+    offset = 0
+
+    log = LogEntry(
+        timestamp=_now_iso(offset),
+        user=user,
+        ip_address=src_ip,
+        location=location,
+        device=device,
+        event_type="iam_policy_change",
+        severity="critical",
+        raw_message=(
+            f"IAM Event: User '{user}' called iam:AttachUserPolicy from {src_ip} "
+            f"attaching 'AdministratorAccess' to their own account. "
+            f"Unauthorized privilege escalation detected."
+        ),
+    )
+    await detection_engine.process_log(log, simulation_type="iam_privilege_escalation")
+    await asyncio.sleep(0.5)
+
+    logger.info("IAM Privilege Escalation simulation %s completed", job_id)
+    return job_id
+
+# ═════════════════════════════════════════════════════════════════════════════
+#  SCENARIO 14 — STAGING BEFORE EXFILTRATION
+# ═════════════════════════════════════════════════════════════════════════════
+
+async def run_staging_before_exfiltration() -> str:
+    """Simulate data staging before exfiltration."""
+    job_id = f"SIM-{uuid.uuid4().hex[:8].upper()}"
+    logger.info("Starting Staging before exfiltration simulation %s", job_id)
+
+    user = random.choice(_USERS)
+    device = random.choice(_DEVICES)
+    internal_ip = random.choice(_INTERNAL_IPS)
+    location = random.choice(_INTERNAL_LOCATIONS)
+    offset = 0
+
+    for i in range(5):
+        log = LogEntry(
+            timestamp=_now_iso(offset),
+            user=user,
+            ip_address=internal_ip,
+            location=location,
+            device=device,
+            event_type="file_access",
+            severity="medium",
+            raw_message=(
+                f"File read: process 'tar' accessed confidential directory. "
+                f"Aggregating {random.randint(50, 150)} files."
+            ),
+        )
+        await detection_engine.process_log(log, simulation_type="staging_exfiltration")
+        offset += random.randint(2, 5)
+        await asyncio.sleep(0.2)
+
+    log = LogEntry(
+        timestamp=_now_iso(offset),
+        user=user,
+        ip_address=internal_ip,
+        location=location,
+        device=device,
+        event_type="file_creation",
+        severity="high",
+        raw_message=(
+            f"Large compressed archive created in /tmp/backup_{random.randint(1000,9999)}.tar.gz. "
+            f"Size: {random.randint(500, 2000)} MB. Highly indicative of data staging for exfiltration."
+        ),
+    )
+    await detection_engine.process_log(log, simulation_type="staging_exfiltration")
+    await asyncio.sleep(0.5)
+
+    logger.info("Staging before exfiltration simulation %s completed", job_id)
+    return job_id
+
+# ═════════════════════════════════════════════════════════════════════════════
+#  SCENARIO 15 — SLOW-DRIP EXFILTRATION
+# ═════════════════════════════════════════════════════════════════════════════
+
+async def run_slow_drip_exfiltration() -> str:
+    """Simulate slow-drip data exfiltration over days."""
+    job_id = f"SIM-{uuid.uuid4().hex[:8].upper()}"
+    logger.info("Starting Slow-drip exfiltration simulation %s", job_id)
+
+    user = random.choice(_USERS)
+    device = random.choice(_DEVICES)
+    internal_ip = random.choice(_INTERNAL_IPS)
+    location = random.choice(_INTERNAL_LOCATIONS)
+    dst_ip = random.choice(_SUSPICIOUS_IPS)
+    
+    # 7 days of daily transfers
+    for day in range(7):
+        offset = -(7 - day) * 86400  # Go back up to 7 days
+        log = LogEntry(
+            timestamp=_now_iso(offset),
+            user=user,
+            ip_address=internal_ip,
+            location=location,
+            device=device,
+            event_type="network_connection",
+            severity="high",
+            raw_message=(
+                f"Sustained outbound transfer to {dst_ip}. "
+                f"Bytes sent: 480 MB (just below 500MB daily threshold). "
+                f"Slow-drip exfiltration detected over day {day+1}."
+            ),
+        )
+        await detection_engine.process_log(log, simulation_type="slow_drip_exfiltration")
+        await asyncio.sleep(0.2)
+
+    logger.info("Slow-drip exfiltration simulation %s completed", job_id)
+    return job_id
+
+# ═════════════════════════════════════════════════════════════════════════════
+#  SCENARIO 11 — DECEPTION TECHNOLOGY (HONEYPOT)
+# ═════════════════════════════════════════════════════════════════════════════
+
+async def run_honeypot_access() -> str:
+    """Simulate an attacker tripping a honeypot endpoint."""
+    job_id = f"SIM-{uuid.uuid4().hex[:8].upper()}"
+    logger.info("Starting honeypot simulation %s", job_id)
+
+    src_ip = random.choice(_INTERNAL_IPS)
+    target_user = "sa_backup"
+    device = random.choice(_DEVICES)
+
+    # Legitimate looking internal traffic first
+    logs = [
+        LogEntry(
+            timestamp=_now_iso(),
+            user=target_user,
+            ip_address=src_ip,
+            location={"country": "US", "city": "Internal"},
+            device=device,
+            event_type="web_access",
+            severity="low",
+            raw_message="GET /dashboard/home HTTP/1.1 200 OK",
+        ),
+        LogEntry(
+            timestamp=_now_iso(1),
+            user=target_user,
+            ip_address=src_ip,
+            location={"country": "US", "city": "Internal"},
+            device=device,
+            event_type="web_access",
+            severity="low",
+            raw_message="GET /api/v1/user/profile HTTP/1.1 200 OK",
+        )
+    ]
+    
+    for log in logs:
+        await detection_engine.process_log(log, simulation_type="honeypot_access")
+        await asyncio.sleep(_rand(0.2, 0.8))
+        
+    # The Trap: Accessing a hidden honeypot
+    await asyncio.sleep(2.0)
+    trap_log = LogEntry(
+        timestamp=_now_iso(3),
+        user=target_user,
+        ip_address=src_ip,
+        location={"country": "US", "city": "Internal"},
+        device=device,
+        event_type="web_access",
+        severity="critical",
+        raw_message="GET /.env HTTP/1.1 403 Forbidden",
+    )
+    await detection_engine.process_log(trap_log, simulation_type="honeypot_access")
+    await asyncio.sleep(_rand(0.5, 1.2))
+
+    trap_log_2 = LogEntry(
+        timestamp=_now_iso(5),
+        user=target_user,
+        ip_address=src_ip,
+        location={"country": "US", "city": "Internal"},
+        device=device,
+        event_type="web_access",
+        severity="critical",
+        raw_message="GET /admin-backup-2023.zip HTTP/1.1 404 Not Found",
+    )
+    await detection_engine.process_log(trap_log_2, simulation_type="honeypot_access")
+
+    logger.info("Honeypot simulation %s completed", job_id)
+    return job_id
+

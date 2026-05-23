@@ -40,6 +40,7 @@ CREATE TABLE IF NOT EXISTS alerts (
     status TEXT DEFAULT 'open',
     ai_analysis TEXT,
     incident_id TEXT,
+    analyst_verdict TEXT,
     created_at TEXT DEFAULT (datetime('now'))
 );
 
@@ -82,7 +83,22 @@ CREATE TABLE IF NOT EXISTS response_actions (
     executed_by TEXT,
     status TEXT,
     incident_id TEXT,
-    alert_id TEXT
+    alert_id TEXT,
+    verification_method TEXT,
+    audit_trail_id TEXT,
+    rollback_available INTEGER,
+    rollback_window_seconds INTEGER
+);
+
+CREATE TABLE IF NOT EXISTS user_baselines (
+    user_id TEXT PRIMARY KEY,
+    normal_hour_sin_mean REAL,
+    normal_hour_cos_mean REAL,
+    known_ip_subnets TEXT,
+    known_devices TEXT,
+    avg_daily_events REAL,
+    avg_fail_rate REAL,
+    last_updated TEXT
 );
 """
 

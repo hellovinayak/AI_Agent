@@ -24,6 +24,7 @@ from app.models.alert import AIAnalysis, Alert, LogEntry
 from app.models.incident import Incident, TimelineEvent
 from app.services import false_positive_engine as fp_engine
 from app.services import ai_reasoning
+from app.services import zero_knowledge_engine
 from app.websocket.manager import manager
 
 logger = logging.getLogger(__name__)
@@ -104,6 +105,9 @@ _token_usage: Dict[str, List[Tuple[float, str]]] = defaultdict(list)
 _recent_alerts_by_user: Dict[str, List[Tuple[Alert, float]]] = defaultdict(list)
 _recent_alerts_by_ip: Dict[str, List[Tuple[Alert, float]]] = defaultdict(list)
 
+# Alert Throttling: {rule_id_user: timestamp}
+_recent_fired_rules: Dict[str, float] = {}
+
 ADMIN_KEYWORDS = {"admin", "root", "sysadmin", "administrator", "superuser", "sa"}
 
 
@@ -127,27 +131,53 @@ def clear_state() -> None:
     _token_usage.clear()
     _recent_alerts_by_user.clear()
     _recent_alerts_by_ip.clear()
+    _recent_fired_rules.clear()
     reset_risk_score()
+    
+    # Clear zero-day engine state if needed
+    zero_knowledge_engine._user_sessions.clear()
 
 
 # ═════════════════════════════════════════════════════════════════════════════
 #  DETECTION RULES
 # ═════════════════════════════════════════════════════════════════════════════
 
+def _compute_velocity_score(events: list, now: float) -> float:
+    w2m = sum(1 for e in events if (now - e) <= 120)
+    w1h = sum(1 for e in events if (now - e) <= 3600)
+    w24h = sum(1 for e in events if (now - e) <= 86400)
+    
+    # Adaptive weights: as global risk score increases, the system becomes more sensitive
+    # If risk is 0, multiplier is 1x. If risk is 100, multiplier is 2x.
+    from app.services.detection_engine import _base_risk_score
+    risk_multiplier = 1.0 + (_base_risk_score / 100.0)
+    
+    score = ((w2m * 0.5) + (w1h * 0.1) + (w24h * 0.02)) * risk_multiplier
+    return score
+
 def _check_det001(log: LogEntry) -> Optional[Alert]:
-    """DET-001: ≥5 failed logins in 2 min from same IP."""
+    """DET-001: Multi-window cumulative brute force detection."""
     if "fail" not in log.event_type.lower() and "failed" not in log.raw_message.lower():
         return None
 
     ip = log.ip_address
     now = time.time()
-    _failed_logins[ip] = _clean_window(_failed_logins[ip], 120)
+    # Clean old entries (> 24h)
+    _failed_logins[ip] = _clean_window(_failed_logins[ip], 86400)
     _failed_logins[ip].append((now, log.user))
 
-    if len(_failed_logins[ip]) >= 5:
+    # Extract just timestamps for the velocity score
+    timestamps = [e[0] for e in _failed_logins[ip]]
+    score = _compute_velocity_score(timestamps, now)
+    
+    # Threshold for composite score
+    if score >= 2.5:
+        # Prevent spamming alerts if score is continuously above threshold
+        # (This is mostly handled by throttling now, but we can reset the history to prevent continuous firing)
+        _failed_logins[ip] = []
         return _make_alert("DET-001", "high", log,
-                           f"Brute force detected: {len(_failed_logins[ip])} failed logins "
-                           f"from {ip} in 2 minutes targeting user(s): "
+                           f"Brute force detected (Velocity Score: {score:.1f}) "
+                           f"from {ip} targeting user(s): "
                            f"{', '.join(set(e[1] for e in _failed_logins[ip]))}")
     return None
 
@@ -193,19 +223,22 @@ def _check_det003(log: LogEntry) -> Optional[Alert]:
 
 
 def _check_det004(log: LogEntry) -> Optional[Alert]:
-    """DET-004: API request rate > 500/min from single token."""
+    """DET-004: API request multi-window velocity scoring."""
     if "api" not in log.event_type.lower():
         return None
 
     user = log.user
     now = time.time()
-    _api_requests[user] = [t for t in _api_requests[user] if t > now - 60]
+    _api_requests[user] = [t for t in _api_requests[user] if t > now - 86400]
     _api_requests[user].append(now)
 
-    if len(_api_requests[user]) > 500:
+    score = _compute_velocity_score(_api_requests[user], now)
+    
+    if score > 250: # Threshold for API abuse score
+        _api_requests[user] = []
         return _make_alert("DET-004", "high", log,
-                           f"API abuse: {len(_api_requests[user])} requests/min "
-                           f"from token '{user}' (threshold: 500)")
+                           f"API abuse detected (Velocity Score: {score:.1f}) "
+                           f"from token '{user}'")
     return None
 
 
@@ -290,6 +323,21 @@ def _check_det008(log: LogEntry) -> Optional[Alert]:
                        f"'{log.device}': {log.raw_message[:200]}")
 
 
+HONEYPOT_ENDPOINTS = [
+    '/admin-backup-2023',
+    '/internal/employee-data',
+    '/.env',
+    '/api/v1/admin/users/export'
+]
+
+def _check_det010(log: LogEntry) -> Optional[Alert]:
+    """DET-010: Deception Technology (Honeypot) Trigger."""
+    msg_lower = log.raw_message.lower()
+    if any(hp in msg_lower for hp in HONEYPOT_ENDPOINTS):
+        return _make_alert("DET-010", "critical", log,
+                           f"Deception Technology Triggered: Access to honeypot endpoint detected by '{log.user}' from {log.ip_address}: {log.raw_message[:200]}")
+    return None
+
 # Ordered list of all detection checks.
 _RULES = [
     _check_det001,
@@ -300,6 +348,8 @@ _RULES = [
     _check_det006,
     _check_det007,
     _check_det008,
+    _check_det010,
+    zero_knowledge_engine.analyze_for_zero_day,
 ]
 
 
@@ -380,6 +430,10 @@ async def _try_group_into_incident(alert: Alert) -> Optional[str]:
                 break
 
     should_group = len(user_alerts) > 0 or len(ip_alerts) > 0 or chain_match
+    
+    # Standalone critical / zero-day alerts should trigger an incident immediately
+    if alert.severity == "critical" or alert.rule_id == "DET-009":
+        should_group = True
 
     if not should_group:
         # Store for future correlation.
@@ -423,6 +477,7 @@ async def _try_group_into_incident(alert: Alert) -> Optional[str]:
                 "alert_count": len(alert_ids),
                 "severity": new_sev,
                 "status": "investigating",
+                "updated_at": datetime.now(timezone.utc).isoformat(),
             })
 
             _recent_alerts_by_user[alert.user].append((alert, now))
@@ -466,6 +521,8 @@ async def _try_group_into_incident(alert: Alert) -> Optional[str]:
             mitre_tactics_set.update(["Credential Access", "Lateral Movement"])
         elif r == "DET-008":
             mitre_tactics_set.update(["Privilege Escalation", "Execution"])
+        elif r == "DET-009":
+            mitre_tactics_set.update(["Defense Evasion", "Discovery"])
 
     now_iso = datetime.now(timezone.utc).isoformat()
     incident_data = {
@@ -521,6 +578,10 @@ async def _try_group_into_incident(alert: Alert) -> Optional[str]:
         "severity": max_sev,
         "alert_count": len(all_alert_ids),
         "status": "investigating",
+        "created_at": now_iso,
+        "updated_at": now_iso,
+        "affected_user": alert.user,
+        "affected_ip": alert.ip_address,
     })
 
     _recent_alerts_by_user[alert.user].append((alert, now))
@@ -573,8 +634,17 @@ async def process_log(log: LogEntry, simulation_type: str = "manual") -> List[Al
     for rule_fn in _RULES:
         alert = rule_fn(log)
         if alert is not None:
+            # Throttling check: do not fire same rule for same user within 5 minutes
+            throttle_key = f"{alert.rule_id}_{alert.user}"
+            now = time.time()
+            if throttle_key in _recent_fired_rules and (now - _recent_fired_rules[throttle_key] < 300):
+                logger.debug("Throttled alert %s for user %s (fired recently)", alert.rule_id, alert.user)
+                continue
+            
+            _recent_fired_rules[throttle_key] = now
+
             # 4a. False-positive evaluation.
-            fp_result = fp_engine.evaluate(alert.severity, alert.rule_id)
+            fp_result = await fp_engine.evaluate(alert)
             alert.confidence_score = fp_result.confidence_score
             alert.adjusted_severity = fp_result.adjusted_severity
             alert.fp_reason = fp_result.fp_reason

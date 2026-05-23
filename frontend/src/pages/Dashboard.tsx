@@ -43,6 +43,7 @@ export function Dashboard() {
     connectionStatus,
     setAlerts,
     setIncidents,
+    setFpSuppressed,
   } = useStore();
 
   const [aiExpanded, setAiExpanded] = useState(true);
@@ -59,12 +60,14 @@ export function Dashboard() {
         ]);
         setAlerts(alertsRes.alerts);
         setIncidents(incidentsRes.incidents);
+        const suppressedCount = alertsRes.alerts.filter((a: Alert) => a.status === 'suppressed').length;
+        setFpSuppressed(suppressedCount);
       } catch (err) {
         console.error('Failed to load dashboard data:', err);
       }
     }
     loadData();
-  }, [setAlerts, setIncidents]);
+  }, [setAlerts, setIncidents, setFpSuppressed]);
 
   // Scroll terminal logs to bottom when new logs arrive
   useEffect(() => {
@@ -90,19 +93,16 @@ export function Dashboard() {
 
   // Compile severity trend data for Recharts
   const chartData = React.useMemo(() => {
-    if (alerts.length === 0) {
-      return [
-        { name: '00:00', critical: 0, high: 0, medium: 0, low: 0 },
-        { name: '04:00', critical: 0, high: 0, medium: 0, low: 0 },
-        { name: '08:00', critical: 0, high: 0, medium: 0, low: 0 },
-        { name: '12:00', critical: 0, high: 0, medium: 0, low: 0 },
-        { name: '16:00', critical: 0, high: 0, medium: 0, low: 0 },
-        { name: '20:00', critical: 0, high: 0, medium: 0, low: 0 },
-      ];
+    const buckets: Record<string, Record<Severity, number>> = {};
+    
+    // Pre-fill the last 6 hours to guarantee the graph always draws correctly
+    const now = new Date();
+    for (let i = 5; i >= 0; i--) {
+      const d = new Date(now.getTime() - i * 60 * 60 * 1000);
+      const timeStr = `${d.getHours().toString().padStart(2, '0')}:00`;
+      buckets[timeStr] = { critical: 0, high: 0, medium: 0, low: 0 };
     }
 
-    // Group alerts by hour blocks (simple bucketing)
-    const buckets: Record<string, Record<Severity, number>> = {};
     alerts.forEach((alert) => {
       try {
         const date = new Date(alert.timestamp);
@@ -112,21 +112,14 @@ export function Dashboard() {
         }
         buckets[timeStr][alert.severity]++;
       } catch {
-        const timeStr = '12:00';
-        if (!buckets[timeStr]) {
-          buckets[timeStr] = { critical: 0, high: 0, medium: 0, low: 0 };
-        }
-        buckets[timeStr][alert.severity]++;
+        // Ignore invalid dates
       }
     });
 
     return Object.entries(buckets)
       .map(([name, counts]) => ({
         name,
-        critical: counts.critical,
-        high: counts.high,
-        medium: counts.medium,
-        low: counts.low,
+        ...counts,
       }))
       .sort((a, b) => a.name.localeCompare(b.name));
   }, [alerts]);
@@ -150,14 +143,29 @@ export function Dashboard() {
     setActing(actionType);
     const actToast = toast.loading(`Initiating response: ${actionType.replace('_', ' ').toUpperCase()}...`);
     try {
-      const action = await api.executeAction(actionType, target, targetAlert.incident_id, targetAlert.id);
+      const action = await api.executeAction(actionType, target, targetAlert.incident_id, targetAlert.id) as any;
       toast.success(
-        <div>
-          <p className="font-bold">Mitigation Executed</p>
-          <p className="text-xs text-slate-300">Action: {action.action_type}</p>
-          <p className="text-xs text-slate-400">Target: {action.target} ({action.status})</p>
+        <div className="w-full">
+          <p className="font-bold text-emerald-400">Mitigation Confirmed</p>
+          <div className="mt-1 p-2 bg-black/30 rounded border border-white/10">
+            <p className="text-[10px] text-slate-300 font-mono flex justify-between">
+              <span>Action:</span> <span className="font-bold text-slate-100">{action.action_type}</span>
+            </p>
+            <p className="text-[10px] text-slate-300 font-mono flex justify-between">
+              <span>Target:</span> <span className="font-bold text-slate-100">{action.target}</span>
+            </p>
+            <p className="text-[10px] text-slate-300 font-mono flex justify-between">
+              <span>Status:</span> <span className="text-emerald-400 uppercase tracking-widest">{action.status}</span>
+            </p>
+            {action.audit_trail_id && (
+              <div className="mt-2 pt-2 border-t border-white/5">
+                <p className="text-[9px] text-slate-500 font-mono">VERIFICATION: {action.verification_method}</p>
+                <p className="text-[9px] text-slate-500 font-mono">AUDIT ID: {action.audit_trail_id}</p>
+              </div>
+            )}
+          </div>
         </div>,
-        { id: actToast }
+        { id: actToast, duration: 6000 }
       );
     } catch (err: any) {
       toast.error(`Action failed: ${err.message || err}`, { id: actToast });

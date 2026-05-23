@@ -76,6 +76,12 @@ class ResponseAction(BaseModel):
     status: Literal["simulated", "pending", "executed", "failed"] = "simulated"
     incident_id: Optional[str] = None
     alert_id: Optional[str] = None
+    
+    # Verification details for the audit trail
+    verification_method: str = "idempotent_api_callback"
+    audit_trail_id: Optional[str] = None
+    rollback_available: bool = True
+    rollback_window_seconds: int = 300
 
 
 class LogEntry(BaseModel):

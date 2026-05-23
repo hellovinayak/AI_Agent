@@ -67,3 +67,17 @@ async def get_incident(incident_id: str) -> Dict[str, Any]:
         raise HTTPException(status_code=404, detail=f"Incident {incident_id} not found")
 
     return _deserialize_incident(row)
+
+
+@router.post("/{incident_id}/report")
+async def get_incident_report(incident_id: str) -> Dict[str, Any]:
+    """Generate a downloadable PDF-style executive/technical report for an incident."""
+    row = await fetch_one("incidents", incident_id)
+    if row is None:
+        raise HTTPException(status_code=404, detail=f"Incident {incident_id} not found")
+
+    incident = _deserialize_incident(row)
+    from app.services.ai_reasoning import generate_incident_report
+
+    report_content = await generate_incident_report(incident)
+    return {"incident_id": incident_id, "report": report_content}

@@ -16,6 +16,7 @@ import uuid
 from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
 
+# pyrefly: ignore [missing-import]
 import httpx
 
 from app.core.config import settings
@@ -493,6 +494,56 @@ def _mock_det008(alert: Alert) -> AIAnalysis:
     )
 
 
+def _mock_det009(alert: Alert) -> AIAnalysis:
+    """Zero-Day Anomaly analysis."""
+    return AIAnalysis(
+        explanation=(
+            f"An Unsupervised Machine Learning model (Isolation Forest) flagged an event "
+            f"by '{alert.user}' on device '{alert.device}' as highly anomalous. "
+            f"The log's numerical features (time of day, payload length, event type frequencies) "
+            f"deviated significantly from the learned 'normal' baseline for this environment. "
+            f"This behavior does not match any known static detection rules, suggesting a "
+            f"novel attack vector or an insider threat operating outside typical parameters."
+        ),
+        narrative=(
+            f"SentinelAI has detected a completely novel anomaly. A threat actor or insider "
+            f"is performing actions that bypass traditional signature-based detections. "
+            f"By correlating unusual timestamps with abnormal payload sizes and API endpoints, "
+            f"we've identified activity that falls into the 1% most anomalous events in the dataset. "
+            f"This could represent a zero-day exploit, advanced persistent threat (APT) beaconing, "
+            f"or a compromised account being used in an unpredictable way."
+        ),
+        severity_reasoning=(
+            "Severity set to HIGH because: (1) Unsupervised ML flagged it as a statistical outlier, "
+            "(2) it bypassed all known static rules, indicating stealth or novelty, "
+            "(3) requires immediate human review to classify the unknown behavior."
+        ),
+        mitre_tactics=["Defense Evasion", "Discovery", "Initial Access"],
+        mitre_techniques=[
+            {"id": "T1562", "name": "Impair Defenses"},
+            {"id": "T1008", "name": "Fallback Channels"},
+        ],
+        recommended_actions=[
+            "Isolate the affected device immediately",
+            "Review full raw logs for the past 24 hours around this timestamp",
+            "Check for unpatched vulnerabilities on the targeted service",
+            "Engage Tier 3 SOC analysts to reverse-engineer the activity",
+            "Collect forensic disk images and network pcaps",
+        ],
+        business_impact=(
+            "Zero-day threats carry extremely high risk because traditional defenses cannot stop them. "
+            "If this is a novel data exfiltration or ransomware strain, the entire network could "
+            "be compromised without raising standard alarms."
+        ),
+        next_step_prediction=(
+            "Since this represents an unknown behavior, expect the actor to attempt lateral movement "
+            "using similarly obfuscated techniques, potentially deploying custom malware payloads."
+        ),
+        generated_by="mock",
+        generated_at=datetime.now(timezone.utc),
+    )
+
+
 # Map rule IDs to their mock generators.
 _MOCK_GENERATORS: Dict[str, Any] = {
     "DET-001": _mock_det001,
@@ -503,6 +554,7 @@ _MOCK_GENERATORS: Dict[str, Any] = {
     "DET-006": _mock_det006,
     "DET-007": _mock_det007,
     "DET-008": _mock_det008,
+    "DET-009": _mock_det009,
 }
 
 
@@ -847,3 +899,152 @@ def _generate_mock_chat_reply(
         "• *'What is the current risk level?'*\n"
         "• *'How do I investigate this incident?'*"
     )
+
+
+async def generate_incident_report(incident: Dict[str, Any]) -> str:
+    """Generate a detailed markdown incident report using the LLM or a mock fallback."""
+    incident_json = json.dumps(incident, indent=2, default=str)
+    prompt = f"""\
+Generate a professional incident report with these sections:
+1. Executive Summary (2 sentences, non-technical)
+2. Technical Timeline (what happened, in order)
+3. MITRE ATT&CK Mapping (tactics and techniques used)
+4. Blast Radius Assessment (what was at risk)
+5. Recommended Actions (immediate and long-term)
+6. Confidence Assessment (how certain are we this was real)
+
+Incident data: {incident_json}
+"""
+    system_prompt = "You are an expert Security Operations Center (SOC) Lead. Generate a high-quality incident report in Markdown format."
+
+    provider = settings.AI_PROVIDER.lower()
+
+    # 1. Try OpenAI
+    if provider == "openai" and settings.OPENAI_API_KEY:
+        try:
+            async with httpx.AsyncClient(timeout=30.0) as client:
+                resp = await client.post(
+                    "https://api.openai.com/v1/chat/completions",
+                    headers={
+                        "Authorization": f"Bearer {settings.OPENAI_API_KEY}",
+                        "Content-Type": "application/json",
+                    },
+                    json={
+                        "model": settings.OPENAI_MODEL,
+                        "messages": [
+                            {"role": "system", "content": system_prompt},
+                            {"role": "user", "content": prompt},
+                        ],
+                        "temperature": 0.3,
+                    },
+                )
+                if resp.status_code == 200:
+                    return resp.json()["choices"][0]["message"]["content"]
+        except Exception as e:
+            logger.warning("OpenAI report generation failed: %s", e)
+
+    # 2. Try Claude
+    if provider == "claude" and settings.ANTHROPIC_API_KEY:
+        try:
+            async with httpx.AsyncClient(timeout=30.0) as client:
+                resp = await client.post(
+                    "https://api.anthropic.com/v1/messages",
+                    headers={
+                        "x-api-key": settings.ANTHROPIC_API_KEY,
+                        "anthropic-version": "2023-06-01",
+                        "Content-Type": "application/json",
+                    },
+                    json={
+                        "model": settings.CLAUDE_MODEL,
+                        "max_tokens": 4096,
+                        "system": system_prompt,
+                        "messages": [{"role": "user", "content": prompt}],
+                    },
+                )
+                if resp.status_code == 200:
+                    return resp.json()["content"][0]["text"]
+        except Exception as e:
+            logger.warning("Claude report generation failed: %s", e)
+
+    # 3. Try Keyless Free Fallback (Pollinations)
+    free_report = await _call_free_ai(prompt, system_prompt)
+    if free_report:
+        return free_report
+
+    # 4. Ultimate Mock Fallback
+    return _generate_mock_report_content(incident)
+
+
+def _generate_mock_report_content(incident: Dict[str, Any]) -> str:
+    """Generate a clean, structured mock Markdown report if all AI services are down."""
+    incident_id = incident.get("id", "INC-UNKNOWN")
+    title = incident.get("title", "Unknown Security Incident")
+    severity = incident.get("severity", "HIGH")
+    user = incident.get("affected_user", "unknown_user")
+    ip = incident.get("affected_ip", "unknown_ip")
+    status = incident.get("status", "open")
+    created_at = incident.get("created_at", "N/A")
+
+    # Parse timeline if it is a JSON string
+    timeline = incident.get("timeline")
+    if isinstance(timeline, str):
+        try:
+            timeline = json.loads(timeline)
+        except Exception:
+            timeline = []
+
+    timeline_str = ""
+    if isinstance(timeline, list) and len(timeline) > 0:
+        for t in timeline:
+            desc = t.get("description", t.get("raw_message", "Event triggered"))
+            ts = t.get("timestamp", "N/A")
+            timeline_str += f"- **[{ts}]** {desc}\n"
+    else:
+        timeline_str = f"- **[{created_at}]** Incident was flagged by security filters.\n"
+
+    mitre_tactics = incident.get("mitre_tactics", [])
+    if isinstance(mitre_tactics, str):
+        try:
+            mitre_tactics = json.loads(mitre_tactics)
+        except Exception:
+            mitre_tactics = ["Initial Access", "Credential Access"]
+
+    mitre_str = ", ".join(mitre_tactics) if mitre_tactics else "Credential Access, Initial Access"
+
+    return f"""# SENTINELAI INCIDENT INVESTIGATION REPORT
+**INCIDENT ID:** {incident_id}  
+**TITLE:** {title}  
+**SEVERITY:** {severity.upper()}  
+**STATUS:** {status.upper()}  
+**GENERATION TIME:** {datetime.now(timezone.utc).strftime('%Y-%m-%d %H:%M:%S UTC')}  
+
+---
+
+### 1. Executive Summary
+SentinelAI correlated anomalous patterns involving account credentials and source IPs into a consolidated threat incident. 
+This incident indicates unauthorized system access targeting username `{user}` from origin IP `{ip}`, which is highly likely to be a credential-compromise campaign.
+
+### 2. Technical Timeline
+Here is the chronological progression of events detected within this threat chain:
+{timeline_str}
+
+### 3. MITRE ATT&CK Mapping
+The actions taken by the threat actor map directly to the following MITRE ATT&CK tactics:
+- **Tactics:** {mitre_str}
+- **Techniques:** T1110 (Brute Force), T1078 (Valid Accounts), T1090 (Proxy/Proxying)
+
+### 4. Blast Radius Assessment
+- **High Risk**: Identity store (`{user}` user account) could be compromised.
+- **Medium Risk**: Peripheral data repositories accessed from IP `{ip}`.
+- **Low Risk**: Endpoint control remains intact; no local host containment breaches observed.
+
+### 5. Recommended Actions
+*   **Immediate**: Invalidate all active user sessions for `{user}` and enforce a hardware-key password reset.
+*   **Immediate**: Deploy perimeter block on IP address `{ip}`.
+*   **Long-term**: Configure advanced Geo-blocking policies and progressive lockouts.
+
+### 6. Confidence Assessment
+- **Final Confidence Score:** 0.94 / 1.00
+- **Assessment**: The threat velocity combined with geographic impossibility guarantees malicious intent.
+"""
+

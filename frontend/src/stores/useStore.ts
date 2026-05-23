@@ -57,15 +57,15 @@ export const useStore = create<State>((set) => ({
       const exists = state.incidents.some((i) => i.id === incident.id);
       let updatedIncidents;
       if (exists) {
-        updatedIncidents = state.incidents.map((i) => (i.id === incident.id ? incident : i));
+        updatedIncidents = state.incidents.map((i) => (i.id === incident.id ? { ...i, ...incident } : i));
       } else {
-        updatedIncidents = [incident, ...state.incidents];
+        updatedIncidents = [{...incident}, ...state.incidents];
       }
       return { incidents: updatedIncidents };
     }),
   updateIncident: (incident) =>
     set((state) => ({
-      incidents: state.incidents.map((i) => (i.id === incident.id ? incident : i)),
+      incidents: state.incidents.map((i) => (i.id === incident.id ? { ...i, ...incident } : i)),
     })),
 
   setLogs: (logs) => set({ logs }),

@@ -12,6 +12,9 @@ import {
   Play,
   RotateCcw,
   Zap,
+  Sparkles,
+  FileText,
+  Download,
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 
@@ -27,6 +30,8 @@ export function IncidentDetail() {
   const [acting, setActing] = useState<string | null>(null);
   const [resolving, setResolving] = useState(false);
   const [expandedAlertId, setExpandedAlertId] = useState<string | null>(null);
+  const [generatingReport, setGeneratingReport] = useState(false);
+  const [reportContent, setReportContent] = useState<string | null>(null);
 
   useEffect(() => {
     async function loadIncident() {
@@ -91,6 +96,31 @@ export function IncidentDetail() {
       toast.error(`Action failed: ${err.message || err}`, { id: actToast });
     } finally {
       setActing(null);
+    }
+  };
+  const handleGenerateReport = async () => {
+    if (!incident) return;
+    setGeneratingReport(true);
+    const toastId = toast.loading('Generating AI incident report...');
+    try {
+      const res = await api.generateIncidentReport(incident.id);
+      setReportContent(res.report);
+      toast.success('AI Incident Report generated successfully!', { id: toastId });
+
+      // Automatically download report as markdown file
+      const blob = new Blob([res.report], { type: 'text/markdown' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `SentinelAI_Report_${incident.id}.md`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+    } catch (err: any) {
+      toast.error(`Report generation failed: ${err.message || err}`, { id: toastId });
+    } finally {
+      setGeneratingReport(false);
     }
   };
 
@@ -175,30 +205,117 @@ export function IncidentDetail() {
           </div>
         </div>
 
-        {/* Action controls (Resolve) */}
-        {incident.status !== 'resolved' && (
+        {/* Action controls (Resolve & Generate Report) */}
+        <div className="flex flex-wrap items-center gap-3 z-10">
           <button
-            onClick={async () => {
-              setResolving(true);
-              const toastId = toast.loading('Resolving incident...');
-              try {
-                // Mock resolving the incident on DB
-                await api.executeAction('quarantine_process', incident.affected_ip, incident.id, undefined);
-                setIncident((prev) => prev ? { ...prev, status: 'resolved' } : null);
-                toast.success('Incident status updated to RESOLVED!', { id: toastId });
-              } catch (err: any) {
-                toast.error(`Resolution failed: ${err.message || err}`, { id: toastId });
-              } finally {
-                setResolving(false);
-              }
-            }}
-            disabled={resolving}
-            className="flex items-center space-x-2 px-5 py-3 text-xs font-bold text-emerald-400 bg-emerald-500/10 border border-emerald-500/20 hover:bg-emerald-500/20 rounded-xl transition-all active:scale-95 z-10"
+            onClick={handleGenerateReport}
+            disabled={generatingReport}
+            className="flex items-center space-x-2 px-5 py-3 text-xs font-bold text-indigo-400 bg-indigo-500/10 border border-indigo-500/20 hover:bg-indigo-500/20 rounded-xl transition-all active:scale-95 disabled:opacity-50"
           >
-            <CheckCircle className="h-4 w-4" />
-            <span>Mark as Resolved</span>
+            <Sparkles className="h-4 w-4" />
+            <span>{generatingReport ? 'Generating...' : 'Generate Report'}</span>
           </button>
-        )}
+
+          {incident.status !== 'resolved' && (
+            <button
+              onClick={async () => {
+                setResolving(true);
+                const toastId = toast.loading('Resolving incident...');
+                try {
+                  // Mock resolving the incident on DB
+                  await api.executeAction('quarantine_process', incident.affected_ip, incident.id, undefined);
+                  setIncident((prev) => prev ? { ...prev, status: 'resolved' } : null);
+                  toast.success('Incident status updated to RESOLVED!', { id: toastId });
+                } catch (err: any) {
+                  toast.error(`Resolution failed: ${err.message || err}`, { id: toastId });
+                } finally {
+                  setResolving(false);
+                }
+              }}
+              disabled={resolving}
+              className="flex items-center space-x-2 px-5 py-3 text-xs font-bold text-emerald-400 bg-emerald-500/10 border border-emerald-500/20 hover:bg-emerald-500/20 rounded-xl transition-all active:scale-95"
+            >
+              <CheckCircle className="h-4 w-4" />
+              <span>Mark as Resolved</span>
+            </button>
+          )}
+        </div>
+      </div>
+
+      {/* Threat Timeline progression bar */}
+      <div className="bg-slate-900/60 border border-slate-800/60 backdrop-blur-md rounded-2xl p-6 shadow-xl space-y-4">
+        <div className="flex items-center space-x-2 border-b border-slate-800/60 pb-3">
+          <Clock className="h-4 w-4 text-indigo-400" />
+          <h3 className="font-bold text-slate-200 text-sm">Attack Killchain Progression</h3>
+        </div>
+
+        <div className="flex flex-col md:flex-row items-center justify-between gap-4 overflow-x-auto py-4 scrollbar-thin">
+          {/* Node 1: Initial Threat Telemetry */}
+          <div className="flex flex-col items-center text-center max-w-[200px] relative">
+            <div className="h-10 w-10 rounded-full bg-rose-500/20 border border-rose-500/50 flex items-center justify-center text-rose-400 font-bold text-xs shadow-lg shadow-rose-950/40">
+              1
+            </div>
+            <p className="text-xs font-bold text-slate-200 mt-2">First Alert Fired</p>
+            <p className="text-[10px] text-slate-500 font-mono mt-0.5">Telemetry Ingested</p>
+          </div>
+
+          <div className="hidden md:block flex-1 h-[2px] bg-slate-800 min-w-[50px] relative -top-3">
+            <div className="absolute top-0 left-0 h-full bg-indigo-500 animate-pulse w-full"></div>
+          </div>
+
+          {/* Node 2: AI Risk Correlation */}
+          <div className="flex flex-col items-center text-center max-w-[200px]">
+            <div className="h-10 w-10 rounded-full bg-indigo-500/20 border border-indigo-500/50 flex items-center justify-center text-indigo-400 font-bold text-xs shadow-lg shadow-indigo-950/40">
+              2
+            </div>
+            <p className="text-xs font-bold text-slate-200 mt-2">AI Core Grouping</p>
+            <p className="text-[10px] text-slate-500 font-mono mt-0.5">Incident Created</p>
+          </div>
+
+          <div className="hidden md:block flex-1 h-[2px] bg-slate-800 min-w-[50px] relative -top-3">
+            {incident.response_actions_taken && incident.response_actions_taken.length > 0 && (
+              <div className="absolute top-0 left-0 h-full bg-emerald-500 w-full"></div>
+            )}
+          </div>
+
+          {/* Node 3: SOAR Mitigation */}
+          <div className="flex flex-col items-center text-center max-w-[200px]">
+            <div className={`h-10 w-10 rounded-full flex items-center justify-center font-bold text-xs shadow-lg ${
+              incident.response_actions_taken && incident.response_actions_taken.length > 0
+                ? 'bg-emerald-500/20 border border-emerald-500/50 text-emerald-400 shadow-emerald-950/40'
+                : 'bg-slate-800/40 border border-slate-700/50 text-slate-500'
+            }`}>
+              3
+            </div>
+            <p className="text-xs font-bold text-slate-200 mt-2">SOAR Mitigation</p>
+            <p className="text-[10px] text-slate-500 font-mono mt-0.5">
+              {incident.response_actions_taken && incident.response_actions_taken.length > 0
+                ? `${incident.response_actions_taken.length} Action(s) Taken`
+                : 'Actions Pending'}
+            </p>
+          </div>
+
+          <div className="hidden md:block flex-1 h-[2px] bg-slate-800 min-w-[50px] relative -top-3">
+            {incident.status === 'resolved' && (
+              <div className="absolute top-0 left-0 h-full bg-emerald-500 w-full"></div>
+            )}
+          </div>
+
+          {/* Node 4: Resolution */}
+          <div className="flex flex-col items-center text-center max-w-[200px]">
+            <div className={`h-10 w-10 rounded-full flex items-center justify-center font-bold text-xs shadow-lg ${
+              incident.status === 'resolved'
+                ? 'bg-emerald-500/20 border border-emerald-500/50 text-emerald-400 shadow-emerald-950/40'
+                : 'bg-amber-500/20 border border-amber-500/50 text-amber-400 shadow-amber-950/40'
+            }`}>
+              4
+            </div>
+            <p className="text-xs font-bold text-slate-200 mt-2">Triage Resolution</p>
+            <p className="text-[10px] text-slate-500 font-mono mt-0.5 uppercase">
+              {incident.status}
+            </p>
+          </div>
+        </div>
       </div>
 
       {/* Grid: Correlation Timeline (2/3) & AI Narrative (1/3) */}
@@ -379,6 +496,53 @@ export function IncidentDetail() {
           </div>
         </div>
       </div>
+
+      {/* Report Modal */}
+      {reportContent && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-sm animate-fade-in select-text">
+          <div className="bg-slate-900 border border-slate-800 rounded-2xl max-w-3xl w-full max-h-[85vh] flex flex-col shadow-2xl overflow-hidden">
+            <div className="p-6 border-b border-slate-800 flex items-center justify-between">
+              <div className="flex items-center space-x-2">
+                <FileText className="h-5 w-5 text-indigo-400" />
+                <h3 className="font-bold text-slate-200 text-lg">AI Incident Report Preview</h3>
+              </div>
+              <button
+                onClick={() => setReportContent(null)}
+                className="text-slate-400 hover:text-slate-200 font-bold text-xs px-3 py-1.5 bg-slate-800 rounded-lg hover:bg-slate-700 transition-colors"
+              >
+                Close
+              </button>
+            </div>
+
+            <div className="p-6 overflow-y-auto font-sans text-slate-300 text-sm leading-relaxed whitespace-pre-wrap select-text max-h-[50vh] scrollbar-thin bg-black/20">
+              {reportContent}
+            </div>
+
+            <div className="p-6 border-t border-slate-800 bg-slate-950/40 flex items-center justify-between gap-4">
+              <p className="text-xs text-slate-500 font-mono">
+                Report generated via SentinelAI L2 Reasoning Engine
+              </p>
+              <button
+                onClick={() => {
+                  const blob = new Blob([reportContent], { type: 'text/markdown' });
+                  const url = URL.createObjectURL(blob);
+                  const a = document.createElement('a');
+                  a.href = url;
+                  a.download = `SentinelAI_Report_${incident.id}.md`;
+                  document.body.appendChild(a);
+                  a.click();
+                  document.body.removeChild(a);
+                  URL.revokeObjectURL(url);
+                }}
+                className="flex items-center space-x-2 px-4 py-2.5 bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-bold rounded-xl transition-all active:scale-95 shadow-lg shadow-indigo-950/40"
+              >
+                <Download className="h-4 w-4" />
+                <span>Download Report (.md)</span>
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

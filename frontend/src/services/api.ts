@@ -51,6 +51,10 @@ export const api = {
 
   getIncident: (id: string) => request<Incident>(`/api/incidents/${id}`),
 
+  generateIncidentReport: (id: string) => request<{ incident_id: string; report: string }>(`/api/incidents/${id}/report`, {
+    method: 'POST',
+  }),
+
   // Simulation Triggers
   simulateBruteForce: () => request<{ job_id: string; status: string; scenario: string }>('/api/simulate/bruteforce', {
     method: 'POST',
@@ -65,6 +69,42 @@ export const api = {
   }),
 
   simulateApiAbuse: () => request<{ job_id: string; status: string; scenario: string }>('/api/simulate/api-abuse', {
+    method: 'POST',
+  }),
+
+  simulatePasswordSpraying: () => request<{ job_id: string; status: string; scenario: string }>('/api/simulate/password-spraying', {
+    method: 'POST',
+  }),
+
+  simulateImpossibleTravel: () => request<{ job_id: string; status: string; scenario: string }>('/api/simulate/impossible-travel', {
+    method: 'POST',
+  }),
+
+  simulateBeaconing: () => request<{ job_id: string; status: string; scenario: string }>('/api/simulate/beaconing', {
+    method: 'POST',
+  }),
+
+  simulateDnsTunneling: () => request<{ job_id: string; status: string; scenario: string }>('/api/simulate/dns-tunneling', {
+    method: 'POST',
+  }),
+
+  simulateCloudMetadata: () => request<{ job_id: string; status: string; scenario: string }>('/api/simulate/cloud-metadata', {
+    method: 'POST',
+  }),
+
+  simulateIamPrivilege: () => request<{ job_id: string; status: string; scenario: string }>('/api/simulate/iam-privilege', {
+    method: 'POST',
+  }),
+
+  simulateStagingExfiltration: () => request<{ job_id: string; status: string; scenario: string }>('/api/simulate/staging-exfiltration', {
+    method: 'POST',
+  }),
+
+  simulateSlowDrip: () => request<{ job_id: string; status: string; scenario: string }>('/api/simulate/slow-drip', {
+    method: 'POST',
+  }),
+
+  simulateHoneypot: () => request<{ job_id: string; status: string; scenario: string }>('/api/simulate/honeypot', {
     method: 'POST',
   }),
 

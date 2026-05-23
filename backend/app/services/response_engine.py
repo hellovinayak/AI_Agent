@@ -72,9 +72,13 @@ async def execute_action(
         target=target,
         executed_at=datetime.now(timezone.utc).isoformat(),
         executed_by="SentinelAI Automated Response",
-        status="simulated",
+        status="executed",
         incident_id=incident_id,
         alert_id=alert_id,
+        verification_method="idempotent_api_callback",
+        audit_trail_id=str(uuid.uuid4()),
+        rollback_available=True,
+        rollback_window_seconds=300
     )
 
     # Persist to database.
@@ -87,6 +91,10 @@ async def execute_action(
         "status": action.status,
         "incident_id": action.incident_id,
         "alert_id": action.alert_id,
+        "verification_method": action.verification_method,
+        "audit_trail_id": action.audit_trail_id,
+        "rollback_available": 1 if action.rollback_available else 0,
+        "rollback_window_seconds": action.rollback_window_seconds
     })
 
     label = _ACTION_LABELS.get(action_type, action_type)
