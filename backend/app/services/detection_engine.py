@@ -392,6 +392,21 @@ def _check_det012(log: LogEntry) -> Optional[Alert]:
     _last_login_tracker[user] = {'country': current_country, 'timestamp': now_dt}
     return None
 
+def _check_det009(log: LogEntry) -> Optional[Alert]:
+    """DET-009: Malware / Suspicious Execution / Ransomware."""
+    msg = log.raw_message.lower()
+    
+    if log.event_type == "process_execution" and ("suspicious" in msg or "unsigned" in msg or "whitelist" in msg):
+        return _make_alert("DET-009", "critical", log, f"Suspicious process execution detected: {log.raw_message}")
+        
+    if log.event_type == "network_connection" and ("malicious ip" in msg or "c2" in msg or "beacon" in msg):
+        return _make_alert("DET-009", "critical", log, f"Outbound connection to suspected C2 server: {log.raw_message}")
+        
+    if log.event_type in ["file_encryption", "file_creation", "file_access"] and ("ransomware" in msg or "encrypted" in msg or "bulk" in msg):
+        return _make_alert("DET-009", "critical", log, f"Potential ransomware / mass file access detected: {log.raw_message}")
+        
+    return None
+
 # Ordered list of all detection checks.
 _RULES = [
     _check_det001,
@@ -402,6 +417,7 @@ _RULES = [
     _check_det006,
     _check_det007,
     _check_det008,
+    _check_det009,
     _check_det010,
     _check_det011,
     _check_det012,
@@ -503,8 +519,8 @@ async def _try_group_into_incident(alert: Alert) -> Optional[str]:
 
     should_group = len(user_alerts) > 0 or len(ip_alerts) > 0 or chain_match
     
-    # Standalone critical / zero-day alerts should trigger an incident immediately
-    if alert.severity == "critical" or alert.rule_id == "DET-009":
+    # Standalone medium/high/critical / zero-day alerts should trigger an incident immediately
+    if alert.severity in ["medium", "high", "critical"] or alert.rule_id == "DET-009":
         should_group = True
 
     if not should_group:
