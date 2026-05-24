@@ -976,3 +976,66 @@ async def run_honeypot_access() -> str:
     logger.info("Honeypot simulation %s completed", job_id)
     return job_id
 
+async def run_benign_traffic() -> str:
+    """Simulate benign traffic that should be suppressed by the false positive engine."""
+    job_id = f"SIM-{uuid.uuid4().hex[:8].upper()}"
+    logger.info("Starting benign traffic simulation %s", job_id)
+
+    # 1. Scheduled DB backup (DET-008) - false positive due to known IP/Device
+    log1 = LogEntry(
+        timestamp=_now_iso(),
+        user="svc_backup",
+        ip_address="10.0.1.150",
+        location={"country": "US", "city": "DataCenter"},
+        device="backup-server-01",
+        event_type="sudo_exec",
+        severity="low",
+        raw_message="sudo tar -czf backup.tar.gz /var/lib/mysql"
+    )
+    await detection_engine.process_log(log1, simulation_type="benign")
+    await asyncio.sleep(0.5)
+
+    # 2. Known vulnerability scanner triggering Deception (DET-010) but from known IP
+    log2 = LogEntry(
+        timestamp=_now_iso(1),
+        user="scanner_bot",
+        ip_address="192.168.1.100", 
+        location={"country": "US", "city": "HQ"},
+        device="SCANNER-01",
+        event_type="http_get",
+        severity="low",
+        raw_message="GET /.env HTTP/1.1 (Vulnerability Scanner)"
+    )
+    await detection_engine.process_log(log2, simulation_type="benign")
+    await asyncio.sleep(0.5)
+
+    # 3. Known deployment script (DET-008) - false positive
+    log3 = LogEntry(
+        timestamp=_now_iso(2),
+        user="ansible_deploy",
+        ip_address="10.0.0.45",
+        location={"country": "US", "city": "HQ"},
+        device="DEPLOY-01",
+        event_type="sudo_exec",
+        severity="low",
+        raw_message="sudo chmod +x /opt/deploy.sh"
+    )
+    await detection_engine.process_log(log3, simulation_type="benign")
+    await asyncio.sleep(0.5)
+    
+    # 4. Another False Positive login attempt triggering DET-002 Geographic Anomaly
+    log4 = LogEntry(
+        timestamp=_now_iso(3),
+        user="system_updater",
+        ip_address="10.0.2.112",
+        location={"country": "FR", "city": "Paris"}, # Unknown country, triggers DET-002
+        device="UPDATE-SERVER",
+        event_type="successful_login",
+        severity="low",
+        raw_message="Successful login from roaming update server."
+    )
+    await detection_engine.process_log(log4, simulation_type="benign")
+
+    logger.info("Completed benign traffic simulation %s", job_id)
+    return job_id
+

@@ -1,4 +1,4 @@
-"""SentinelAI FastAPI Application Entrypoint.
+"""SHIELDX FastAPI Application Entrypoint.
 
 Registers CORS middleware, DB connection lifecycle handlers, API routers,
 and the WebSocket endpoint for real-time alert streaming.
@@ -23,6 +23,8 @@ from app.api.routes_incidents import router as incidents_router
 from app.api.routes_ai import router as ai_router
 from app.api.routes_simulator import router as simulator_router
 from app.api.routes_respond import router as respond_router
+from app.api.routes_graph import router as graph_router
+from app.api.routes_ingest import router as ingest_router
 
 # Configure logging
 logging.basicConfig(
@@ -38,17 +40,54 @@ START_TIME = time.time()
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Lifecycle manager for the FastAPI application."""
-    logger.info("Starting SentinelAI Backend...")
+    logger.info("Starting SHIELDX Backend...")
     # Initialise the database schema
     await init_db()
+    manager.start_worker()
+    
+    from app.services.ioc_enrichment import ioc_enrichment_engine
+    ioc_enrichment_engine.start()
+    
+    # Start the background stats broadcast loop
+    import asyncio
+    from app.services.health_monitor import health_monitor
+    from app.database.db import execute_sql
+    
+    async def broadcast_stats_loop():
+        while True:
+            try:
+                suppressed_res = await execute_sql("SELECT COUNT(*) as count FROM alerts WHERE status='suppressed'")
+                suppressed_count = suppressed_res[0]['count']
+                last_fp_res = await execute_sql("SELECT fp_reason FROM alerts WHERE status='suppressed' ORDER BY timestamp DESC LIMIT 1")
+                last_reason = last_fp_res[0]['fp_reason'] if last_fp_res else None
+            except Exception:
+                suppressed_count = 0
+                last_reason = None
+                
+            health = health_monitor.compute_health()
+            stats = {
+                'suppressed_alerts': suppressed_count,
+                'ingestion_health': health['health_pct'],
+                'health_status': health['status'],
+                'events_per_second': health['events_per_second'],
+                'llm_available': health['llm_available'],
+                'websocket_connected': health['websocket_connected'],
+                'last_suppression_reason': last_reason
+            }
+            await manager.broadcast({'type': 'stats_update', 'data': stats})
+            await asyncio.sleep(1.0)
+            
+    loop_task = asyncio.create_task(broadcast_stats_loop())
+    
     yield
+    loop_task.cancel()
     # Close the database connection gracefully on shutdown
-    logger.info("Shutting down SentinelAI Backend...")
+    logger.info("Shutting down SHIELDX Backend...")
     await close_db()
 
 
 app = FastAPI(
-    title="SentinelAI API",
+    title="SHIELDX API",
     description="Autonomous AI-powered Security Operations Center (SOC) analyst backend.",
     version="1.0.0",
     lifespan=lifespan,
@@ -69,6 +108,8 @@ app.include_router(incidents_router)
 app.include_router(ai_router)
 app.include_router(simulator_router)
 app.include_router(respond_router)
+app.include_router(graph_router)
+app.include_router(ingest_router)
 
 
 @app.get("/api/health", tags=["Health"])

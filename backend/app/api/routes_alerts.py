@@ -11,6 +11,7 @@ from fastapi import APIRouter, HTTPException, Query
 
 from app.database.db import fetch_many, fetch_one, update_row, execute_sql
 from app.models.alert import AIAnalysis, Alert
+from app.services.attack_surface import attack_surface_scorer
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/alerts", tags=["Alerts"])
@@ -39,6 +40,15 @@ def _deserialize_alert(row: Dict[str, Any]) -> Dict[str, Any]:
 
     return alert
 
+
+@router.get("/risky-users")
+async def get_risky_users():
+    """Get top 10 risky users scored by the persona engine."""
+    from app.services.persona_engine import persona_engine
+    try:
+        return await persona_engine.get_riskiest_entities()
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
 
 @router.get("")
 async def list_alerts(

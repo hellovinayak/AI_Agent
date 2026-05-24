@@ -144,15 +144,34 @@ async def simulate_honeypot() -> Dict[str, Any]:
     asyncio.create_task(_run_safe(simulator.run_honeypot_access, job_id))
     return {"job_id": job_id, "status": "started", "scenario": "honeypot_access"}
 
+@router.post("/api/simulate/benign")
+async def simulate_benign() -> Dict[str, Any]:
+    """Launch benign traffic simulation to generate false positives."""
+    job_id = f"SIM-{uuid.uuid4().hex[:8].upper()}"
+    asyncio.create_task(_run_safe(simulator.run_benign_traffic, job_id))
+    return {"job_id": job_id, "status": "started", "scenario": "benign"}
+
 @router.delete("/api/demo/reset")
 async def demo_reset() -> Dict[str, Any]:
     """Wipe all data and reset in-memory state for a fresh demo."""
-    tables = ["alerts", "incidents", "logs", "response_actions"]
+    tables = ["alerts", "incidents", "logs", "response_actions", "entity_personas", "user_baselines"]
     counts: Dict[str, int] = {}
     for table in tables:
         counts[table] = await delete_all(table)
 
     clear_state()
+    
+    # Also clear persona state
+    from app.services.persona_engine import persona_engine
+    persona_engine._personas.clear()
+    persona_engine._peer_groups.clear()
+    persona_engine._loaded = False
+    
+    # Also clear lateral movement graph
+    from app.services.lateral_movement import lateral_movement_detector
+    lateral_movement_detector._access_graph.clear()
+    lateral_movement_detector._access_timestamps.clear()
+    
     logger.info("Demo reset complete: %s", counts)
     return {"cleared": True, "deleted_rows": counts}
 

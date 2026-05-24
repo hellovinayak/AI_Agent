@@ -25,6 +25,12 @@ from app.models.incident import Incident, TimelineEvent
 from app.services import false_positive_engine as fp_engine
 from app.services import ai_reasoning
 from app.services import zero_knowledge_engine
+from app.services.threat_intel import threat_intel
+from app.services.ml_queue import ml_queue
+from app.services.persona_engine import persona_engine
+from app.services.ioc_enrichment import ioc_enrichment_engine
+from app.services.triage_engine import triage_engine
+from app.services.lateral_movement import lateral_movement_detector
 from app.websocket.manager import manager
 
 logger = logging.getLogger(__name__)
@@ -338,6 +344,54 @@ def _check_det010(log: LogEntry) -> Optional[Alert]:
                            f"Deception Technology Triggered: Access to honeypot endpoint detected by '{log.user}' from {log.ip_address}: {log.raw_message[:200]}")
     return None
 
+_spray_tracker: Dict[str, List[str]] = defaultdict(list)
+
+def _check_det011(log: LogEntry) -> Optional[Alert]:
+    """DET-011: Password Spray."""
+    if log.event_type != 'failed_login':
+        return None
+        
+    now = time.time()
+    ip = log.ip_address
+    
+    # Filter out old logins (>10 minutes)
+    _spray_tracker[ip] = [(t, u) for (t, u) in _spray_tracker[ip] if now - t < 600]
+    _spray_tracker[ip].append((now, log.user))
+    
+    unique_users = len(set([u for _, u in _spray_tracker[ip]]))
+    if unique_users >= 10:
+        return _make_alert("DET-011", "high", log,
+                           f"{unique_users} unique accounts targeted from {log.ip_address} in 10 minutes — classic password spray pattern")
+    return None
+
+_last_login_tracker: Dict[str, dict] = {}
+
+def _check_det012(log: LogEntry) -> Optional[Alert]:
+    """DET-012: Impossible Travel."""
+    if log.event_type != 'successful_login' or not isinstance(log.location, dict) or not log.location.get('country'):
+        return None
+        
+    current_country = log.location.get('country')
+    user = log.user
+    now_dt = datetime.fromisoformat(log.timestamp.replace('Z', '+00:00'))
+    
+    last = _last_login_tracker.get(user)
+    if not last or not last.get('country') or last['country'] == current_country:
+        _last_login_tracker[user] = {'country': current_country, 'timestamp': now_dt}
+        return None
+        
+    time_diff_hours = abs((now_dt - last['timestamp']).total_seconds()) / 3600.0
+    
+    # If gap is under 2 hours and countries differ — physically impossible
+    if time_diff_hours < 2:
+        alert = _make_alert("DET-012", "critical", log,
+                           f"Login from {current_country} only {time_diff_hours:.1f}h after login from {last['country']} — physically impossible")
+        _last_login_tracker[user] = {'country': current_country, 'timestamp': now_dt}
+        return alert
+        
+    _last_login_tracker[user] = {'country': current_country, 'timestamp': now_dt}
+    return None
+
 # Ordered list of all detection checks.
 _RULES = [
     _check_det001,
@@ -349,8 +403,18 @@ _RULES = [
     _check_det007,
     _check_det008,
     _check_det010,
-    zero_knowledge_engine.analyze_for_zero_day,
+    _check_det011,
+    _check_det012,
 ]
+
+def _check_det013(log: LogEntry) -> Optional[Alert]:
+    lateral_movement_detector.record_access(log.model_dump())
+    result = lateral_movement_detector.detect_lateral_movement(log.model_dump())
+    if result:
+        return _make_alert("DET-013", result['severity'], log, result['description'])
+    return None
+
+_RULES.append(_check_det013)
 
 
 # ═════════════════════════════════════════════════════════════════════════════
@@ -359,6 +423,14 @@ _RULES = [
 
 def _make_alert(rule_id: str, severity: str, log: LogEntry, raw_message: str) -> Alert:
     """Create an :class:`Alert` from a detection rule match."""
+    # Check Threat Intel
+    intel = threat_intel.check_ip(log.ip_address)
+    confidence = 0.5
+    if intel['is_known_malicious']:
+        confidence += 0.3
+        raw_message += f" [THREAT INTEL: IP matched in {intel['feed_source']}]"
+        severity = "critical" if severity in ["high", "medium"] else severity
+        
     return Alert(
         id=f"ALT-{uuid.uuid4().hex[:8].upper()}",
         timestamp=log.timestamp,
@@ -370,7 +442,7 @@ def _make_alert(rule_id: str, severity: str, log: LogEntry, raw_message: str) ->
         device=log.device,
         severity=severity,
         raw_message=raw_message,
-        confidence_score=0.5,
+        confidence_score=confidence,
         status="open",
     )
 
@@ -537,12 +609,29 @@ async def _try_group_into_incident(alert: Alert) -> Optional[str]:
         "alert_ids": json.dumps(all_alert_ids),
         "timeline": json.dumps(timeline_events),
         "ai_narrative": (
-            f"SentinelAI has correlated {len(all_alert_ids)} alerts into a single "
-            f"incident. Detection rules {', '.join(all_rules)} fired against user "
-            f"'{alert.user}' from IP {alert.ip_address} within a "
-            f"{INCIDENT_WINDOW_SECONDS // 60}-minute window, indicating a coordinated "
-            f"multi-stage attack."
-        ),
+        f"Incident correlates {len(all_alert_ids)} alerts involving user {alert.user}. "
+        f"Initial severity assessment is {max_sev}."
+    )
+    }
+    
+    # Calculate triage score
+    alerts_data = [a.model_dump() for a, _ in user_alerts] + [alert.model_dump()]
+    
+    try:
+        triage = triage_engine.score_incident(incident_data, alerts_data, None)
+        incident_data["priority"] = triage.priority.value
+        incident_data["sla_deadline"] = triage.ack_deadline.isoformat()
+        incident_data["triage_score"] = triage.triage_score
+        incident_data["triage_data"] = json.dumps(triage.to_dict())
+        incident_data["ai_narrative"] += f" Automated triage assessed score {triage.triage_score}/100 and recommended tier {triage.recommended_analyst_tier} analyst."
+    except Exception as e:
+        logger.error(f"Triage engine failed: {e}")
+        incident_data["priority"] = 2
+        incident_data["triage_score"] = 0.0
+        incident_data["triage_data"] = "{}"
+
+    # Insert the new incident.
+    incident_data.update({
         "mitre_tactics": json.dumps(sorted(mitre_tactics_set)),
         "recommended_actions": json.dumps([
             f"Block IP {alert.ip_address} at the perimeter",
@@ -556,7 +645,12 @@ async def _try_group_into_incident(alert: Alert) -> Optional[str]:
             f"Estimated blast radius: multiple connected services and data stores."
         ),
         "response_actions": json.dumps([]),
-    }
+        "assigned_to": None,
+        "priority": 1 if max_sev == "critical" else 2 if max_sev == "high" else 3 if max_sev == "medium" else 4,
+        "sla_deadline": (datetime.now(timezone.utc) + timedelta(hours={'critical': 1, 'high': 4, 'medium': 24, 'low': 72}.get(max_sev, 24))).isoformat(),
+        "resolution_notes": None,
+        "closed_at": None,
+    })
 
     await insert_row("incidents", incident_data)
 
@@ -613,96 +707,191 @@ async def process_log(log: LogEntry, simulation_type: str = "manual") -> List[Al
 
     Returns the list of alerts generated (may be empty).
     """
-    # 1. Persist the raw log.
-    await insert_row("logs", {
-        "timestamp": log.timestamp,
-        "user_name": log.user,
-        "ip_address": log.ip_address,
-        "location": json.dumps(log.location),
-        "device": log.device,
-        "event_type": log.event_type,
-        "severity": log.severity,
-        "raw_message": log.raw_message,
-        "simulation_type": simulation_type,
-    })
+    from app.services.health_monitor import health_monitor
+    start_time = time.time()
+    try:
+        # 1. Persist the raw log.
+        await insert_row("logs", {
+            "timestamp": log.timestamp,
+            "user_name": log.user,
+            "ip_address": log.ip_address,
+            "location": json.dumps(log.location),
+            "device": log.device,
+            "event_type": log.event_type,
+            "severity": log.severity,
+            "raw_message": log.raw_message,
+            "simulation_type": simulation_type,
+        })
 
-    # 2. Broadcast raw log.
-    await manager.broadcast_new_log(log.model_dump())
+        # 2. Broadcast raw log.
+        await manager.broadcast_new_log(log.model_dump())
 
-    # 3. Evaluate detection rules.
-    generated_alerts: List[Alert] = []
-    for rule_fn in _RULES:
-        alert = rule_fn(log)
-        if alert is not None:
-            # Throttling check: do not fire same rule for same user within 5 minutes
-            throttle_key = f"{alert.rule_id}_{alert.user}"
-            now = time.time()
-            if throttle_key in _recent_fired_rules and (now - _recent_fired_rules[throttle_key] < 300):
-                logger.debug("Throttled alert %s for user %s (fired recently)", alert.rule_id, alert.user)
-                continue
+        # Submit to background ML Queue for zero-day analysis
+        ml_queue.submit(log)
+        
+        # Update entity persona asynchronously
+        try:
+            await persona_engine.update_persona(log.model_dump())
+        except Exception as e:
+            logger.error(f"Persona engine update failed: {e}")
+
+        # 3. Evaluate deterministic detection rules.
+        generated_alerts: List[Alert] = []
+        for rule_fn in _RULES:
+            alert = rule_fn(log)
+            if alert is not None:
+                # Throttling check: do not fire same rule for same user within 5 minutes
+                throttle_key = f"{alert.rule_id}_{alert.user}"
+                now = time.time()
+                if throttle_key in _recent_fired_rules and (now - _recent_fired_rules[throttle_key] < 300):
+                    logger.debug("Throttled alert %s for user %s (fired recently)", alert.rule_id, alert.user)
+                    continue
+                
+                _recent_fired_rules[throttle_key] = now
+
+                # 4a. False-positive evaluation.
+                fp_result = await fp_engine.evaluate(alert)
+                alert.confidence_score = fp_result.confidence_score
+                alert.adjusted_severity = fp_result.adjusted_severity
+                alert.fp_reason = fp_result.fp_reason
+
+                if fp_result.suppressed:
+                    alert.status = "suppressed"
+
+                # 4b. AI analysis.
+                try:
+                    analysis = await ai_reasoning.analyze_alert(alert)
+                    alert.ai_analysis = analysis
+                except Exception as exc:
+                    logger.warning("AI analysis failed for %s: %s", alert.id, exc)
+
+                # 4c. Incident grouping (only for non-suppressed alerts).
+                if alert.status != "suppressed":
+                    incident_id = await _try_group_into_incident(alert)
+                    if incident_id:
+                        alert.incident_id = incident_id
+                        alert.status = "in_incident"
+
+                # 4d. Bump risk score.
+                new_risk = _bump_risk(alert.adjusted_severity or alert.severity)
+
+                # 4e. Enricht alert with IOC and Persona engines
+                try:
+                    alert_dict = alert.model_dump()
+                    enriched_alert = await ioc_enrichment_engine.enrich_alert(alert_dict)
+                    persona_result = await persona_engine.score_against_persona(alert_dict)
+                    
+                    if persona_result['persona_score'] > 0.6:
+                        enriched_alert['confidence'] = min(enriched_alert.get('confidence', 0.5) + 0.15, 1.0)
+                        
+                    alert.confidence_score = enriched_alert.get('confidence', alert.confidence_score)
+                except Exception as e:
+                    logger.error(f"Alert enrichment failed: {e}")
+
+                # 4f. Persist alert.
+                ai_json = alert.ai_analysis.model_dump_json() if alert.ai_analysis else None
+                await insert_row("alerts", {
+                    "id": alert.id,
+                    "timestamp": alert.timestamp,
+                    "rule_id": alert.rule_id,
+                    "event_type": alert.event_type,
+                    "user_name": alert.user,
+                    "ip_address": alert.ip_address,
+                    "location": json.dumps(alert.location),
+                    "device": alert.device,
+                    "severity": alert.severity,
+                    "raw_message": alert.raw_message,
+                    "confidence_score": alert.confidence_score,
+                    "adjusted_severity": alert.adjusted_severity,
+                    "fp_reason": alert.fp_reason,
+                    "status": alert.status,
+                    "ai_analysis": ai_json,
+                    "incident_id": alert.incident_id,
+                })
+
+                # 4f. Broadcast.
+                if alert.status == "suppressed":
+                    await manager.broadcast_fp_suppressed(alert.model_dump(mode="json"))
+                else:
+                    await manager.broadcast_new_alert(alert.model_dump(mode="json"))
+
+                await manager.broadcast_risk_score(new_risk)
+
+                generated_alerts.append(alert)
+                logger.info(
+                    "Alert %s (%s) — severity=%s confidence=%.2f status=%s",
+                    alert.id, alert.rule_id, alert.severity,
+                    alert.confidence_score, alert.status,
+                )
+
+    except Exception:
+        from app.services.health_monitor import health_monitor
+        health_monitor.record_dropped()
+        raise
+    finally:
+        from app.services.health_monitor import health_monitor
+        from app.database.db import execute_sql
+        processing_time = (time.time() - start_time) * 1000
+        health_monitor.record_event(processing_time)
+        
+        # Get count of suppressed alerts
+        try:
+            suppressed_res = await execute_sql("SELECT COUNT(*) as count FROM alerts WHERE status='suppressed'")
+            suppressed_count = suppressed_res[0]['count']
+            last_fp_res = await execute_sql("SELECT fp_reason FROM alerts WHERE status='suppressed' ORDER BY timestamp DESC LIMIT 1")
+            last_reason = last_fp_res[0]['fp_reason'] if last_fp_res else None
+        except Exception:
+            suppressed_count = 0
+            last_reason = None
             
-            _recent_fired_rules[throttle_key] = now
-
-            # 4a. False-positive evaluation.
-            fp_result = await fp_engine.evaluate(alert)
-            alert.confidence_score = fp_result.confidence_score
-            alert.adjusted_severity = fp_result.adjusted_severity
-            alert.fp_reason = fp_result.fp_reason
-
-            if fp_result.suppressed:
-                alert.status = "suppressed"
-
-            # 4b. AI analysis.
-            try:
-                analysis = await ai_reasoning.analyze_alert(alert)
-                alert.ai_analysis = analysis
-            except Exception as exc:
-                logger.warning("AI analysis failed for %s: %s", alert.id, exc)
-
-            # 4c. Incident grouping (only for non-suppressed alerts).
-            if alert.status != "suppressed":
-                incident_id = await _try_group_into_incident(alert)
-                if incident_id:
-                    alert.incident_id = incident_id
-                    alert.status = "in_incident"
-
-            # 4d. Bump risk score.
-            new_risk = _bump_risk(alert.adjusted_severity or alert.severity)
-
-            # 4e. Persist alert.
-            ai_json = alert.ai_analysis.model_dump_json() if alert.ai_analysis else None
-            await insert_row("alerts", {
-                "id": alert.id,
-                "timestamp": alert.timestamp,
-                "rule_id": alert.rule_id,
-                "event_type": alert.event_type,
-                "user_name": alert.user,
-                "ip_address": alert.ip_address,
-                "location": json.dumps(alert.location),
-                "device": alert.device,
-                "severity": alert.severity,
-                "raw_message": alert.raw_message,
-                "confidence_score": alert.confidence_score,
-                "adjusted_severity": alert.adjusted_severity,
-                "fp_reason": alert.fp_reason,
-                "status": alert.status,
-                "ai_analysis": ai_json,
-                "incident_id": alert.incident_id,
-            })
-
-            # 4f. Broadcast.
-            if alert.status == "suppressed":
-                await manager.broadcast_fp_suppressed(alert.model_dump(mode="json"))
-            else:
-                await manager.broadcast_new_alert(alert.model_dump(mode="json"))
-
-            await manager.broadcast_risk_score(new_risk)
-
-            generated_alerts.append(alert)
-            logger.info(
-                "Alert %s (%s) — severity=%s confidence=%.2f status=%s",
-                alert.id, alert.rule_id, alert.severity,
-                alert.confidence_score, alert.status,
-            )
+        health = health_monitor.compute_health()
+        stats = {
+            'suppressed_alerts': suppressed_count,
+            'ingestion_health': health['health_pct'],
+            'health_status': health['status'],
+            'events_per_second': health['events_per_second'],
+            'llm_available': health['llm_available'],
+            'websocket_connected': health['websocket_connected'],
+            'last_suppression_reason': last_reason
+        }
+        await manager.broadcast({'type': 'stats_update', 'data': stats})
 
     return generated_alerts
+async def _fire_zero_day_alert(log: LogEntry, alert: Alert) -> None:
+    """Called by the background ML worker when a zero-day is found."""
+    # 1. False Positive Engine
+    fp_result = await fp_engine.evaluate(alert)
+    alert.confidence_score = fp_result.confidence_score
+    alert.adjusted_severity = fp_result.adjusted_severity
+    alert.fp_reason = fp_result.fp_reason
+
+    if fp_result.suppressed:
+        return
+
+    # 2. AI analysis
+    try:
+        analysis = await ai_reasoning.analyze_alert(alert)
+        alert.ai_analysis = analysis
+    except Exception as e:
+        logger.error(f"AI analysis failed for zero-day: {e}")
+
+    # 3. Persist Alert
+    alert_dict = alert.model_dump()
+    alert_dict["ai_analysis"] = json.dumps(alert.ai_analysis.model_dump()) if alert.ai_analysis else None
+    alert_dict["location"] = json.dumps(alert.location) if alert.location else None
+    alert_dict["user_name"] = alert_dict.pop("user")
+    
+    await insert_row("alerts", alert_dict)
+    _bump_risk(alert.severity)
+    
+    # 4. Handle Incident Correlation
+    incident_id = await _try_group_into_incident(alert)
+    if incident_id:
+        alert.incident_id = incident_id
+        alert.status = "in_incident"
+    
+    # 5. Push to websocket
+    await manager.broadcast({
+        "type": "new_alert",
+        "data": alert.model_dump()
+    })

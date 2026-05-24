@@ -71,7 +71,7 @@ async def execute_action(
         action_type=action_type,
         target=target,
         executed_at=datetime.now(timezone.utc).isoformat(),
-        executed_by="SentinelAI Automated Response",
+        executed_by="SHIELDX Automated Response",
         status="executed",
         incident_id=incident_id,
         alert_id=alert_id,

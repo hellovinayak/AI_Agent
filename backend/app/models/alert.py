@@ -72,7 +72,7 @@ class ResponseAction(BaseModel):
     action_type: str
     target: str
     executed_at: str
-    executed_by: str = "SentinelAI Automated Response"
+    executed_by: str = "SHIELDX Automated Response"
     status: Literal["simulated", "pending", "executed", "failed"] = "simulated"
     incident_id: Optional[str] = None
     alert_id: Optional[str] = None

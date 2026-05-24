@@ -109,3 +109,12 @@ async def chat(req: ChatRequest) -> Dict[str, Any]:
         incident_id=incident_id,
     )
     return result
+
+@router.get("/config")
+async def get_ai_config() -> Dict[str, Any]:
+    from app.core.config import settings
+    return {
+        "provider": settings.AI_PROVIDER,
+        "openai_configured": bool(settings.OPENAI_API_KEY),
+        "claude_configured": bool(settings.ANTHROPIC_API_KEY)
+    }

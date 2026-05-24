@@ -59,7 +59,14 @@ CREATE TABLE IF NOT EXISTS incidents (
     mitre_tactics TEXT,
     recommended_actions TEXT,
     business_impact TEXT,
-    response_actions TEXT
+    response_actions TEXT,
+    assigned_to TEXT,
+    priority INTEGER DEFAULT 2,
+    sla_deadline TEXT,
+    resolution_notes TEXT,
+    closed_at TEXT,
+    triage_score REAL,
+    triage_data TEXT
 );
 
 CREATE TABLE IF NOT EXISTS logs (
@@ -88,6 +95,19 @@ CREATE TABLE IF NOT EXISTS response_actions (
     audit_trail_id TEXT,
     rollback_available INTEGER,
     rollback_window_seconds INTEGER
+);
+
+CREATE TABLE IF NOT EXISTS entity_personas (
+    entity_id TEXT PRIMARY KEY,
+    entity_type TEXT,
+    typical_hours TEXT,
+    known_destinations TEXT,
+    known_actions TEXT,
+    avg_events_per_hour REAL,
+    confirmed_incidents INTEGER,
+    observation_days INTEGER,
+    last_updated TEXT,
+    peer_group_id TEXT
 );
 
 CREATE TABLE IF NOT EXISTS user_baselines (
@@ -120,6 +140,19 @@ async def init_db() -> None:
     """Create all tables if they do not exist yet."""
     db = await get_db()
     await db.executescript(_SCHEMA_SQL)
+    
+    # Simple migration for new columns
+    try:
+        await db.execute("ALTER TABLE incidents ADD COLUMN assigned_to TEXT")
+        await db.execute("ALTER TABLE incidents ADD COLUMN priority INTEGER DEFAULT 2")
+        await db.execute("ALTER TABLE incidents ADD COLUMN sla_deadline TEXT")
+        await db.execute("ALTER TABLE incidents ADD COLUMN resolution_notes TEXT")
+        await db.execute("ALTER TABLE incidents ADD COLUMN closed_at TEXT")
+        await db.execute("ALTER TABLE incidents ADD COLUMN triage_score REAL")
+        await db.execute("ALTER TABLE incidents ADD COLUMN triage_data TEXT")
+    except Exception:
+        pass # Columns already exist
+
     await db.commit()
     logger.info("Database initialised at %s", settings.db_path)
 

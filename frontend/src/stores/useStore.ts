@@ -9,6 +9,11 @@ interface State {
   fpSuppressed: number;
   connectionStatus: ConnectionStatus;
   sidebarCollapsed: boolean;
+  systemStats: {
+    ingestion_health: number;
+    health_status: string;
+    events_per_second: number;
+  };
 
   setAlerts: (alerts: Alert[]) => void;
   addAlert: (alert: Alert) => void;
@@ -25,6 +30,7 @@ interface State {
   incrementFpSuppressed: () => void;
   
   setConnectionStatus: (status: ConnectionStatus) => void;
+  setSystemStats: (stats: any) => void;
   toggleSidebar: () => void;
   clearAll: () => void;
 }
@@ -37,6 +43,11 @@ export const useStore = create<State>((set) => ({
   fpSuppressed: 0,
   connectionStatus: 'disconnected',
   sidebarCollapsed: false,
+  systemStats: {
+    ingestion_health: 100,
+    health_status: 'OPTIMAL',
+    events_per_second: 0
+  },
 
   setAlerts: (alerts) => set({ alerts }),
   addAlert: (alert) =>
@@ -84,6 +95,7 @@ export const useStore = create<State>((set) => ({
   incrementFpSuppressed: () => set((state) => ({ fpSuppressed: state.fpSuppressed + 1 })),
 
   setConnectionStatus: (connectionStatus) => set({ connectionStatus }),
+  setSystemStats: (stats) => set((state) => ({ systemStats: { ...state.systemStats, ...stats } })),
   toggleSidebar: () => set((state) => ({ sidebarCollapsed: !state.sidebarCollapsed })),
   clearAll: () => set({ alerts: [], incidents: [], logs: [], riskScore: 0, fpSuppressed: 0 }),
 }));

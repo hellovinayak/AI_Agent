@@ -1,6 +1,6 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import toast from 'react-hot-toast';
-import { Settings as SettingsIcon, Brain, Network, Moon, RotateCcw, Save } from 'lucide-react';
+import { Settings as SettingsIcon, Brain, Network, Moon, RotateCcw, Save, ShieldCheck, ShieldAlert } from 'lucide-react';
 import { api } from '../services/api';
 import { useStore } from '../stores/useStore';
 
@@ -9,15 +9,17 @@ export function Settings() {
   const [resetting, setResetting] = useState(false);
 
   // Load / Save states locally in localStorage to persist configurations
-  const [provider, setProvider] = useState<string>(
-    localStorage.getItem('sentinel_ai_provider') || 'mock'
-  );
-  const [openaiKey, setOpenaiKey] = useState<string>(
-    localStorage.getItem('sentinel_openai_key') || ''
-  );
-  const [claudeKey, setClaudeKey] = useState<string>(
-    localStorage.getItem('sentinel_claude_key') || ''
-  );
+  const [aiConfig, setAiConfig] = useState<{provider: string, openai_configured: boolean, claude_configured: boolean}>({
+    provider: 'mock', openai_configured: false, claude_configured: false
+  });
+  const [loadingConfig, setLoadingConfig] = useState(true);
+
+  useEffect(() => {
+    api.getAiConfig()
+      .then(config => setAiConfig(config))
+      .catch(err => console.error("Failed to load AI config", err))
+      .finally(() => setLoadingConfig(false));
+  }, []);
 
   const [backendUrl, setBackendUrl] = useState<string>(
     localStorage.getItem('sentinel_backend_url') || 'http://localhost:8000'
@@ -28,10 +30,7 @@ export function Settings() {
 
   const handleSaveAIConfig = (e: React.FormEvent) => {
     e.preventDefault();
-    localStorage.setItem('sentinel_ai_provider', provider);
-    localStorage.setItem('sentinel_openai_key', openaiKey);
-    localStorage.setItem('sentinel_claude_key', claudeKey);
-    toast.success('AI configurations updated successfully. Refresh browser to bind.');
+    toast.error('AI configurations are now managed server-side via .env files for security.');
   };
 
   const handleSaveConnection = (e: React.FormEvent) => {
@@ -78,54 +77,56 @@ export function Settings() {
             <h3 className="font-bold text-slate-200">AI Reasoning Provider</h3>
           </div>
 
-          <form onSubmit={handleSaveAIConfig} className="space-y-4 text-xs font-semibold text-slate-300">
-            <div className="space-y-1">
-              <label className="block text-[10px] text-slate-500 uppercase tracking-wider">Active Engine</label>
-              <select
-                value={provider}
-                onChange={(e) => setProvider(e.target.value)}
-                className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3.5 py-2.5 text-slate-200 focus:outline-none focus:border-indigo-500 transition-colors"
-              >
-                <option value="mock">Autonomous Mock fallback (Default)</option>
-                <option value="openai">OpenAI GPT Engine (Direct API)</option>
-                <option value="claude">Anthropic Claude Engine (Direct API)</option>
-              </select>
-            </div>
+          <div className="space-y-4 text-xs font-semibold text-slate-300">
+            {loadingConfig ? (
+                <div className="text-slate-500 animate-pulse">Loading secure configuration...</div>
+            ) : (
+                <>
+                <div className="space-y-1">
+                  <label className="block text-[10px] text-slate-500 uppercase tracking-wider">Active Engine (Server Configured)</label>
+                  <div className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3.5 py-2.5 text-slate-200 capitalize">
+                    {aiConfig.provider}
+                  </div>
+                </div>
 
-            {provider === 'openai' && (
-              <div className="space-y-1">
-                <label className="block text-[10px] text-slate-500 uppercase tracking-wider">OpenAI API Key</label>
-                <input
-                  type="password"
-                  value={openaiKey}
-                  onChange={(e) => setOpenaiKey(e.target.value)}
-                  placeholder="sk-proj-..."
-                  className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3.5 py-2.5 text-slate-200 placeholder-slate-650 focus:outline-none focus:border-indigo-500 font-mono transition-colors"
-                />
-              </div>
+                <div className="space-y-3 pt-2">
+                  <div className="flex items-center justify-between bg-slate-950 p-3 rounded-xl border border-slate-800">
+                    <span className="text-slate-400">OpenAI Configuration</span>
+                    {aiConfig.openai_configured ? (
+                        <div className="flex items-center space-x-1.5 text-emerald-400">
+                            <ShieldCheck className="h-4 w-4" />
+                            <span>Configured (.env)</span>
+                        </div>
+                    ) : (
+                        <div className="flex items-center space-x-1.5 text-amber-500">
+                            <ShieldAlert className="h-4 w-4" />
+                            <span>Missing (.env)</span>
+                        </div>
+                    )}
+                  </div>
+                  
+                  <div className="flex items-center justify-between bg-slate-950 p-3 rounded-xl border border-slate-800">
+                    <span className="text-slate-400">Anthropic Configuration</span>
+                    {aiConfig.claude_configured ? (
+                        <div className="flex items-center space-x-1.5 text-emerald-400">
+                            <ShieldCheck className="h-4 w-4" />
+                            <span>Configured (.env)</span>
+                        </div>
+                    ) : (
+                        <div className="flex items-center space-x-1.5 text-amber-500">
+                            <ShieldAlert className="h-4 w-4" />
+                            <span>Missing (.env)</span>
+                        </div>
+                    )}
+                  </div>
+                </div>
+                
+                <p className="text-[10px] text-slate-500 pt-2 leading-relaxed">
+                  For security compliance, API keys are no longer accepted via the browser. Please configure <code className="text-indigo-400 bg-indigo-500/10 px-1 rounded">OPENAI_API_KEY</code> or <code className="text-indigo-400 bg-indigo-500/10 px-1 rounded">ANTHROPIC_API_KEY</code> in your backend <code className="text-indigo-400 bg-indigo-500/10 px-1 rounded">.env</code> file.
+                </p>
+                </>
             )}
-
-            {provider === 'claude' && (
-              <div className="space-y-1">
-                <label className="block text-[10px] text-slate-500 uppercase tracking-wider">Anthropic API Key</label>
-                <input
-                  type="password"
-                  value={claudeKey}
-                  onChange={(e) => setClaudeKey(e.target.value)}
-                  placeholder="sk-ant-..."
-                  className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3.5 py-2.5 text-slate-200 placeholder-slate-650 focus:outline-none focus:border-indigo-500 font-mono transition-colors"
-                />
-              </div>
-            )}
-
-            <button
-              type="submit"
-              className="flex items-center space-x-1.5 px-4 py-2.5 bg-indigo-600 hover:bg-indigo-500 hover:scale-[1.01] active:scale-95 text-white font-bold rounded-xl transition-all shadow-md shadow-indigo-950/20"
-            >
-              <Save className="h-3.5 w-3.5" />
-              <span>Save AI Selection</span>
-            </button>
-          </form>
+          </div>
         </div>
 
         {/* Section 2: Ingestion and Web Sockets */}

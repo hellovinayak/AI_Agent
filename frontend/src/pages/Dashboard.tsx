@@ -28,7 +28,9 @@ import toast from 'react-hot-toast';
 import { useStore } from '../stores/useStore';
 import { api } from '../services/api';
 import { SimulatorPanel } from '../components/SimulatorPanel';
-import { Alert, Incident, Severity } from '../types';
+import { Alert, Incident, Severity, TimelineEvent, AIAnalysis } from '../types';
+import IOCEnrichmentBadges from '../components/IOCEnrichmentBadges';
+import { RiskyUsersWidget } from '../components/RiskyUsersWidget';
 
 export function Dashboard() {
   const navigate = useNavigate();
@@ -41,6 +43,7 @@ export function Dashboard() {
     riskScore,
     fpSuppressed,
     connectionStatus,
+    systemStats,
     setAlerts,
     setIncidents,
     setFpSuppressed,
@@ -49,19 +52,26 @@ export function Dashboard() {
   const [aiExpanded, setAiExpanded] = useState(true);
   const [selectedAlertForAction, setSelectedAlertForAction] = useState<Alert | null>(null);
   const [acting, setActing] = useState<string | null>(null);
+  const [suppressedFlash, setSuppressedFlash] = useState(false);
+
+  useEffect(() => {
+    setSuppressedFlash(true);
+    const t = setTimeout(() => setSuppressedFlash(false), 1000);
+    return () => clearTimeout(t);
+  }, [fpSuppressed]);
 
   // Fetch initial paginated data
   useEffect(() => {
     async function loadData() {
       try {
-        const [alertsRes, incidentsRes] = await Promise.all([
+        const [alertsRes, incidentsRes, suppressedRes] = await Promise.all([
           api.getAlerts(1, 100),
           api.getIncidents(1, 10),
+          api.getAlerts(1, 1, undefined, 'suppressed')
         ]);
         setAlerts(alertsRes.alerts);
         setIncidents(incidentsRes.incidents);
-        const suppressedCount = alertsRes.alerts.filter((a: Alert) => a.status === 'suppressed').length;
-        setFpSuppressed(suppressedCount);
+        setFpSuppressed(suppressedRes.total);
       } catch (err) {
         console.error('Failed to load dashboard data:', err);
       }
@@ -252,32 +262,57 @@ export function Dashboard() {
         </div>
 
         {/* Suppressed False Positives */}
-        <div className="bg-slate-900/60 border border-slate-800/60 backdrop-blur-md rounded-2xl p-6 flex items-center justify-between shadow-xl">
-          <div>
-            <span className="text-xs font-semibold text-slate-400 uppercase tracking-wider block mb-1">Suppressed Alerts</span>
-            <span className="text-3xl font-black text-slate-200 tracking-tight block">{fpSuppressed}</span>
-            <span className="text-xs text-emerald-400 mt-2 block font-medium">
-              False positives filtered by AI logic
+        <div className={`bg-slate-900/60 border border-slate-800/60 backdrop-blur-md rounded-2xl p-6 flex flex-col shadow-xl ${suppressedFlash ? 'flash-green' : ''}`}>
+          <div className="flex items-center justify-between">
+            <div>
+              <span className="text-xs font-semibold text-slate-400 uppercase tracking-wider block mb-1">Suppressed Alerts</span>
+              <span className="text-3xl font-black text-slate-200 tracking-tight block">{fpSuppressed}</span>
+            </div>
+            <span className="flex h-12 w-12 items-center justify-center rounded-xl bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 shadow-[0_0_15px_rgba(16,185,129,0.15)]">
+              <ShieldCheck className="h-6 w-6" />
             </span>
           </div>
-          <span className="flex h-12 w-12 items-center justify-center rounded-xl bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 shadow-[0_0_15px_rgba(16,185,129,0.15)]">
-            <ShieldCheck className="h-6 w-6" />
+          <span className="text-xs text-emerald-400 mt-2 block font-medium">
+            False positives filtered by AI logic
           </span>
+          {/* Note: if you have last_suppression_reason in systemStats, show it here */}
         </div>
 
         {/* Connectivity health */}
-        <div className="bg-slate-900/60 border border-slate-800/60 backdrop-blur-md rounded-2xl p-6 flex items-center justify-between shadow-xl">
-          <div>
-            <span className="text-xs font-semibold text-slate-400 uppercase tracking-wider block mb-1">Ingestion Health</span>
-            <span className="text-3xl font-black text-slate-200 tracking-tight block">99.8%</span>
-            <span className="text-xs text-indigo-400 mt-2 block font-semibold uppercase tracking-wider">
-              {connectionStatus === 'connected' ? 'WebSocket Streaming' : 'Reconnecting...'}
+        <div className="bg-slate-900/60 border border-slate-800/60 backdrop-blur-md rounded-2xl p-6 flex flex-col shadow-xl relative">
+          <div className="flex items-center justify-between">
+            <div>
+              <span className="text-xs font-semibold text-slate-400 uppercase tracking-wider block mb-1">Ingestion Health</span>
+              <span className="text-3xl font-black tracking-tight block" style={{ color: systemStats.health_status === 'OPTIMAL' ? '#4AE290' : systemStats.health_status === 'CRITICAL' ? '#E24A4A' : '#E2A84A' }}>
+                {systemStats.ingestion_health}%
+              </span>
+            </div>
+            <span className="flex h-12 w-12 items-center justify-center rounded-xl bg-indigo-500/10 text-indigo-400 border border-indigo-500/20 shadow-[0_0_15px_rgba(99,102,241,0.15)]">
+              <Activity className="h-6 w-6" />
             </span>
           </div>
-          <span className="flex h-12 w-12 items-center justify-center rounded-xl bg-indigo-500/10 text-indigo-400 border border-indigo-500/20 shadow-[0_0_15px_rgba(99,102,241,0.15)]">
-            <Activity className="h-6 w-6" />
+          <span className="text-xs mt-2 block font-semibold uppercase tracking-wider" style={{ color: systemStats.health_status === 'OPTIMAL' ? '#4AE290' : systemStats.health_status === 'CRITICAL' ? '#E24A4A' : '#E2A84A' }}>
+            {systemStats.health_status} · {systemStats.events_per_second} eps
           </span>
+          <div className="health-bar">
+            <div className="health-fill h-full"
+              style={{
+                width: `${systemStats.ingestion_health}%`,
+                backgroundColor: systemStats.health_status === 'OPTIMAL' ? '#4AE290' : systemStats.health_status === 'CRITICAL' ? '#E24A4A' : '#E2A84A',
+                transition: 'width 0.5s ease, background-color 0.5s ease'
+              }}
+            />
+          </div>
+          <div className="flex mt-2">
+            <span className={connectionStatus === 'connected' ? 'indicator-on' : 'indicator-off'}>
+              WS
+            </span>
+            <span className="indicator-on">
+              LLM
+            </span>
+          </div>
         </div>
+
       </div>
 
       {/* Grid: Terminal Logs & Severity Chart */}
@@ -472,6 +507,9 @@ export function Dashboard() {
                       {latestAiAlert?.event_type} (Rule {latestAiAlert?.rule_id})
                     </h4>
                     <p className="text-xs text-slate-400 mt-1 font-mono">{latestAiAlert?.raw_message}</p>
+                    {latestAiAlert?.ioc_enrichment && (
+                      <IOCEnrichmentBadges enrichment={latestAiAlert.ioc_enrichment} />
+                    )}
                   </div>
 
                   {/* AI Explanation */}
@@ -527,75 +565,83 @@ export function Dashboard() {
         </div>
       </div>
 
-      {/* Mitigation Actions shortcuts */}
-      <div className="bg-slate-900/60 border border-slate-800/60 backdrop-blur-md rounded-2xl p-6 shadow-xl">
-        <div className="flex items-center space-x-2.5 border-b border-slate-800/60 pb-4 mb-4">
-          <span className="flex h-8 w-8 items-center justify-center rounded-xl bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
-            <ShieldAlert className="h-4 w-4" />
-          </span>
-          <div>
-            <h2 className="font-bold text-slate-200">Recommended Responses & Mitigations</h2>
-            <p className="text-xs text-slate-400">
-              Select an ingested threat alert to dispatch orchestrated mock SOAR block scripts.
-            </p>
-          </div>
-        </div>
-
-        {/* Selected target alert dropdown if multiple available */}
-        <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-6">
-          <div className="flex items-center space-x-3 bg-slate-950/60 border border-slate-800 px-4 py-2.5 rounded-xl">
-            <span className="text-xs font-semibold text-slate-400">Target Context:</span>
-            {latestAiAlert ? (
-              <div className="flex items-center space-x-3 text-xs">
-                <span className="font-bold text-slate-200 font-mono">
-                  {latestAiAlert.event_type} ({latestAiAlert.user})
-                </span>
-                <span className="font-mono text-slate-500">{latestAiAlert.ip_address}</span>
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+        <div className="lg:col-span-2">
+          {/* Mitigation Actions shortcuts */}
+          <div className="bg-slate-900/60 border border-slate-800/60 backdrop-blur-md rounded-2xl p-6 shadow-xl h-full">
+            <div className="flex items-center space-x-2.5 border-b border-slate-800/60 pb-4 mb-4">
+              <span className="flex h-8 w-8 items-center justify-center rounded-xl bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
+                <ShieldAlert className="h-4 w-4" />
+              </span>
+              <div>
+                <h2 className="font-bold text-slate-200">Recommended Responses & Mitigations</h2>
+                <p className="text-xs text-slate-400">
+                  Select an ingested threat alert to dispatch orchestrated mock SOAR block scripts.
+                </p>
               </div>
-            ) : (
-              <span className="text-xs text-slate-600 font-mono">No target loaded. Inject a scenario.</span>
-            )}
-          </div>
-          {latestAiAlert && (
-            <div className="flex flex-wrap gap-2 text-xs">
-              <span className="flex items-center space-x-1 bg-slate-850 px-2 py-1 rounded text-slate-400 font-mono">
-                <User className="h-3 w-3" />
-                <span>{latestAiAlert.user}</span>
-              </span>
-              <span className="flex items-center space-x-1 bg-slate-850 px-2 py-1 rounded text-slate-400 font-mono">
-                <Globe className="h-3 w-3" />
-                <span>{latestAiAlert.ip_address} ({latestAiAlert.location?.country || 'RO'})</span>
-              </span>
-              <span className="flex items-center space-x-1 bg-slate-850 px-2 py-1 rounded text-slate-400 font-mono">
-                <Monitor className="h-3 w-3" />
-                <span>{latestAiAlert.device}</span>
-              </span>
             </div>
-          )}
+
+            {/* Selected target alert dropdown if multiple available */}
+            <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-6">
+              <div className="flex items-center space-x-3 bg-slate-950/60 border border-slate-800 px-4 py-2.5 rounded-xl">
+                <span className="text-xs font-semibold text-slate-400">Target Context:</span>
+                {latestAiAlert ? (
+                  <div className="flex items-center space-x-3 text-xs">
+                    <span className="font-bold text-slate-200 font-mono">
+                      {latestAiAlert.event_type} ({latestAiAlert.user})
+                    </span>
+                    <span className="font-mono text-slate-500">{latestAiAlert.ip_address}</span>
+                  </div>
+                ) : (
+                  <span className="text-xs text-slate-600 font-mono">No target loaded. Inject a scenario.</span>
+                )}
+              </div>
+              {latestAiAlert && (
+                <div className="flex flex-wrap gap-2 text-xs">
+                  <span className="flex items-center space-x-1 bg-slate-850 px-2 py-1 rounded text-slate-400 font-mono">
+                    <User className="h-3 w-3" />
+                    <span>{latestAiAlert.user}</span>
+                  </span>
+                  <span className="flex items-center space-x-1 bg-slate-850 px-2 py-1 rounded text-slate-400 font-mono">
+                    <Globe className="h-3 w-3" />
+                    <span>{latestAiAlert.ip_address} ({latestAiAlert.location?.country || 'RO'})</span>
+                  </span>
+                  <span className="flex items-center space-x-1 bg-slate-850 px-2 py-1 rounded text-slate-400 font-mono">
+                    <Monitor className="h-3 w-3" />
+                    <span>{latestAiAlert.device}</span>
+                  </span>
+                </div>
+              )}
+            </div>
+
+            {/* Response actions grid */}
+            <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
+              {[
+                { id: 'block_ip', label: 'Block Attacker IP', desc: 'Perimeter firewall' },
+                { id: 'disable_account', label: 'Disable Account', desc: 'IAM authorization' },
+                { id: 'revoke_token', label: 'Revoke Token', desc: 'Session token' },
+                { id: 'force_mfa_reset', label: 'Force MFA Reset', desc: 'Account verification' },
+                { id: 'isolate_device', label: 'Isolate Endpoint', desc: 'Device containment' },
+                { id: 'quarantine_process', label: 'Quarantine Process', desc: 'Process execution' },
+              ].map((act) => (
+                <button
+                  key={act.id}
+                  onClick={() => handleExecuteAction(act.id)}
+                  disabled={!latestAiAlert || acting !== null}
+                  className="flex flex-col items-center justify-center p-4 rounded-xl border border-white/5 bg-slate-950/60 hover:bg-slate-900/60 hover:border-slate-700/60 active:scale-95 hover:scale-[1.01] transition-all disabled:opacity-30 disabled:pointer-events-none text-center"
+                >
+                  <span className="text-xs font-bold text-slate-200">{act.label}</span>
+                  <span className="text-[10px] text-slate-500 font-medium mt-1 uppercase tracking-wide">
+                    {act.desc}
+                  </span>
+                </button>
+              ))}
+            </div>
+          </div>
         </div>
 
-        {/* Response actions grid */}
-        <div className="grid grid-cols-2 md:grid-cols-6 gap-3">
-          {[
-            { id: 'block_ip', label: 'Block Attacker IP', desc: 'Perimeter firewall' },
-            { id: 'disable_account', label: 'Disable Account', desc: 'IAM authorization' },
-            { id: 'revoke_token', label: 'Revoke Token', desc: 'Session token' },
-            { id: 'force_mfa_reset', label: 'Force MFA Reset', desc: 'Account verification' },
-            { id: 'isolate_device', label: 'Isolate Endpoint', desc: 'Device containment' },
-            { id: 'quarantine_process', label: 'Quarantine Process', desc: 'Process execution' },
-          ].map((act) => (
-            <button
-              key={act.id}
-              onClick={() => handleExecuteAction(act.id)}
-              disabled={!latestAiAlert || acting !== null}
-              className="flex flex-col items-center justify-center p-4 rounded-xl border border-white/5 bg-slate-950/60 hover:bg-slate-900/60 hover:border-slate-700/60 active:scale-95 hover:scale-[1.01] transition-all disabled:opacity-30 disabled:pointer-events-none text-center"
-            >
-              <span className="text-xs font-bold text-slate-200">{act.label}</span>
-              <span className="text-[10px] text-slate-500 font-medium mt-1 uppercase tracking-wide">
-                {act.desc}
-              </span>
-            </button>
-          ))}
+        <div className="lg:col-span-1">
+          <RiskyUsersWidget />
         </div>
       </div>
 

@@ -35,8 +35,8 @@ export function Incidents() {
 
   // Client-side filter matching to avoid DB delays during quick navigation
   const filteredIncidents = incidents.filter((inc) => {
-    const sevMatch = severityFilter === 'all' || inc.severity.toLowerCase() === severityFilter.toLowerCase();
-    const statMatch = statusFilter === 'all' || inc.status.toLowerCase() === statusFilter.toLowerCase();
+    const sevMatch = severityFilter === 'all' || inc.severity?.toLowerCase() === severityFilter.toLowerCase();
+    const statMatch = statusFilter === 'all' || inc.status?.toLowerCase() === statusFilter.toLowerCase();
     return sevMatch && statMatch;
   });
 
@@ -131,7 +131,7 @@ export function Incidents() {
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
           {filteredIncidents.map((inc) => {
-            const sev = inc.severity.toLowerCase() as Severity;
+            const sev = (inc.severity || 'low').toLowerCase() as Severity;
             const color = severityColors[sev] || '#6b7280';
             return (
               <div
@@ -160,7 +160,7 @@ export function Incidents() {
                     </span>
                     <span
                       className={`text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded border ${
-                        statusColors[inc.status.toLowerCase()] || 'text-slate-400 border-slate-700 bg-slate-800'
+                        statusColors[inc.status?.toLowerCase()] || 'text-slate-400 border-slate-700 bg-slate-800'
                       }`}
                     >
                       {inc.status}

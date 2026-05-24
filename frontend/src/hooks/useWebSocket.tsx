@@ -117,6 +117,16 @@ export function useWebSocket() {
             );
             break;
 
+          case 'stats_update':
+            logger('Stats update received', message.data);
+            useStore.getState().setFpSuppressed(message.data.suppressed_alerts);
+            useStore.getState().setSystemStats({
+              ingestion_health: message.data.ingestion_health,
+              health_status: message.data.health_status,
+              events_per_second: message.data.events_per_second
+            });
+            break;
+
           default:
             logger('Unhandled WS message type', message);
         }

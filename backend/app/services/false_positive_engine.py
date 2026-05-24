@@ -76,6 +76,23 @@ DEMO_BASELINES = {
         'scheduled_jobs': [
             {'type': 'db_backup', 'hour': 2, 'day': 'daily'}
         ]
+    },
+    'svc_backup': {
+        'scheduled_jobs': [{'type': 'db_backup', 'hour': 2, 'day': 'daily'}],
+        'known_ips': ['10.0.1.150'],
+        'known_devices': ['backup-server-01']
+    },
+    'scanner_bot': {
+        'known_ips': ['192.168.1.100'],
+        'known_devices': ['SCANNER-01']
+    },
+    'ansible_deploy': {
+        'known_ips': ['10.0.0.45'],
+        'known_devices': ['DEPLOY-01']
+    },
+    'system_updater': {
+        'known_devices': ['UPDATE-SERVER'],
+        'known_ips': ['10.0.2.112']
     }
 }
 
@@ -106,13 +123,17 @@ async def evaluate(alert: Alert) -> FPResult:
             
         # IP Check
         if alert.ip_address in known_subnets or any(alert.ip_address.startswith(s.split('/')[0][:-1]) for s in known_subnets):
-            score -= 0.20
+            score -= 0.35
             reasons.append(f"IP {alert.ip_address} is a known subnet for this user")
             
         # Device Check
-        if alert.device not in known_devices and known_devices:
-            score += 0.25
-            reasons.append(f"unrecognized device '{alert.device}'")
+        if known_devices:
+            if alert.device in known_devices:
+                score -= 0.25
+                reasons.append(f"device '{alert.device}' is a known trusted device")
+            else:
+                score += 0.25
+                reasons.append(f"unrecognized device '{alert.device}'")
             
         # Time Check
         try:

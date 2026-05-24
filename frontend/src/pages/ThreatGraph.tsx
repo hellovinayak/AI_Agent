@@ -246,6 +246,31 @@ export function ThreatGraph() {
                 <X className="h-4 w-4" />
               </button>
             </div>
+            {relatedAlerts[0] && relatedAlerts[0].persona_score !== undefined && (
+              <div className="mb-4 p-4 bg-slate-950/60 border border-slate-800 rounded-xl space-y-3">
+                <div className="flex justify-between items-center mb-1">
+                  <h4 className="text-[10px] font-mono font-bold text-indigo-400 uppercase tracking-widest">
+                    Behavioral Persona
+                  </h4>
+                  <span className="text-xs font-bold text-slate-300">
+                    Score: <span className={relatedAlerts[0].persona_score! > 0.6 ? 'text-red-400' : 'text-emerald-400'}>{relatedAlerts[0].persona_score}</span>
+                  </span>
+                </div>
+                <p className="text-xs text-slate-400 leading-relaxed font-sans border-l-2 border-indigo-500/30 pl-3">
+                  {relatedAlerts[0].persona_explanation}
+                </p>
+                {relatedAlerts[0].persona_deviations && relatedAlerts[0].persona_deviations.length > 0 && (
+                  <div className="mt-2 space-y-1.5">
+                    {relatedAlerts[0].persona_deviations.map((dev: any, i: number) => (
+                      <div key={i} className="text-[10px] bg-slate-900 px-2 py-1.5 rounded flex items-start gap-2">
+                        <span className="text-red-400 mt-0.5">⚠</span>
+                        <span className="text-slate-300 font-medium">{dev.description}</span>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
 
             {/* List of related alerts */}
             <div className="flex-1 overflow-y-auto pr-1 space-y-3 scrollbar-thin">

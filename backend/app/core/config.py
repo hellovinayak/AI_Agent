@@ -10,7 +10,7 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
 class Settings(BaseSettings):
-    """Central configuration for the SentinelAI backend.
+    """Central configuration for the SHIELDX backend.
 
     Values are loaded (in priority order) from:
       1. Environment variables
@@ -33,7 +33,7 @@ class Settings(BaseSettings):
     CLAUDE_MODEL: str = "claude-sonnet-4-20250514"
 
     # ── Database ─────────────────────────────────────────────────────────
-    DATABASE_URL: str = "sqlite:///./sentinelai.db"
+    DATABASE_URL: str = "sqlite:///./shieldx.db"
 
     # ── Server ───────────────────────────────────────────────────────────
     BACKEND_HOST: str = "0.0.0.0"

@@ -7,6 +7,7 @@ fp_suppressed) to every connected frontend client.
 
 from __future__ import annotations
 
+import asyncio
 import json
 import logging
 from typing import Any, Dict, List
@@ -21,6 +22,43 @@ class ConnectionManager:
 
     def __init__(self) -> None:
         self.active_connections: List[WebSocket] = []
+        self._message_queue = asyncio.Queue(maxsize=5000)
+        self._worker_task = None
+
+    def start_worker(self):
+        if self._worker_task is None:
+            self._worker_task = asyncio.create_task(self._broadcast_worker())
+
+    async def _broadcast_worker(self):
+        while True:
+            try:
+                # We fetch all available messages to batch them or just send them out quickly
+                # This ensures we don't block the caller (detection engine)
+                messages = []
+                # Block until at least one message is ready
+                messages.append(await self._message_queue.get())
+                
+                # Drain the queue up to 50 messages
+                while not self._message_queue.empty() and len(messages) < 50:
+                    messages.append(self._message_queue.get_nowait())
+                    
+                # Broadcast the batch or individual messages
+                stale: List[WebSocket] = []
+                for connection in self.active_connections:
+                    try:
+                        for msg in messages:
+                            await connection.send_json(msg)
+                    except Exception:
+                        if connection not in stale:
+                            stale.append(connection)
+                
+                for ws in stale:
+                    self.disconnect(ws)
+                    
+            except asyncio.CancelledError:
+                break
+            except Exception as e:
+                logger.error(f"WebSocket broadcast worker error: {e}")
 
     async def connect(self, websocket: WebSocket) -> None:
         """Accept a new WebSocket connection and register it."""
@@ -41,23 +79,14 @@ class ConnectionManager:
         )
 
     async def broadcast(self, message: Dict[str, Any]) -> None:
-        """Send a JSON message to every connected client.
+        """Send a JSON message to every connected client via background queue.
 
-        Silently drops connections that have gone stale.
-
-        Args:
-            message: A dict with at least a ``type`` key. Example::
-
-                {"type": "new_alert", "data": { ... }}
+        Silently drops messages if the queue is full (backpressure).
         """
-        stale: List[WebSocket] = []
-        for connection in self.active_connections:
-            try:
-                await connection.send_json(message)
-            except Exception:
-                stale.append(connection)
-        for ws in stale:
-            self.disconnect(ws)
+        try:
+            self._message_queue.put_nowait(message)
+        except asyncio.QueueFull:
+            logger.warning("WebSocket broadcast queue full, dropping message")
 
     async def broadcast_new_log(self, log_data: Dict[str, Any]) -> None:
         """Convenience: broadcast a ``new_log`` event."""

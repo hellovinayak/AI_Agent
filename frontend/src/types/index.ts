@@ -39,6 +39,13 @@ export interface Alert {
   status: 'open' | 'suppressed' | 'in_incident';
   ai_analysis?: AIAnalysis;
   incident_id?: string;
+  ioc_enrichment?: Record<string, any>;
+  ioc_risk_boost?: number;
+  ioc_confirmed?: boolean;
+  persona_score?: number;
+  persona_deviations?: any[];
+  persona_explanation?: string;
+  persona_boosted?: boolean;
 }
 
 export interface TimelineEvent {
@@ -76,6 +83,13 @@ export interface Incident {
   recommended_actions: string[];
   business_impact: string;
   response_actions_taken: ResponseAction[];
+  assigned_to?: string;
+  priority?: number;
+  sla_deadline?: string;
+  resolution_notes?: string;
+  closed_at?: string;
+  triage_score?: number;
+  triage_data?: any;
 }
 
 export interface LogEntry {
@@ -121,12 +135,25 @@ export interface FPSuppressedMessage {
   data: Alert;
 }
 
+export interface StatsUpdateMessage {
+  type: 'stats_update';
+  data: {
+    suppressed_alerts: number;
+    ingestion_health: number;
+    health_status: string;
+    events_per_second: number;
+    llm_available: boolean;
+    websocket_connected: boolean;
+  };
+}
+
 export type WSMessage =
   | NewLogMessage
   | NewAlertMessage
   | IncidentUpdateMessage
   | RiskScoreUpdateMessage
-  | FPSuppressedMessage;
+  | FPSuppressedMessage
+  | StatsUpdateMessage;
 
 // ========== API REQUEST/RESPONSE TYPES ==========
 
@@ -142,4 +169,5 @@ export interface ChatMessage {
   role: 'user' | 'assistant';
   content: string;
   timestamp: string;
+  provider?: string;
 }

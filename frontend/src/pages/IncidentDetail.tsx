@@ -1,5 +1,7 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useRef } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
+// @ts-ignore
+import html2pdf from 'html2pdf.js';
 import {
   ChevronLeft,
   Clock,
@@ -20,6 +22,8 @@ import toast from 'react-hot-toast';
 
 import { api } from '../services/api';
 import { Incident, Severity, ResponseAction } from '../types';
+import { ThreatGraph } from '../components/ThreatGraph';
+import TriageScoreCard from '../components/TriageScoreCard';
 
 export function IncidentDetail() {
   const { id } = useParams<{ id: string }>();
@@ -107,16 +111,7 @@ export function IncidentDetail() {
       setReportContent(res.report);
       toast.success('AI Incident Report generated successfully!', { id: toastId });
 
-      // Automatically download report as markdown file
-      const blob = new Blob([res.report], { type: 'text/markdown' });
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = `SentinelAI_Report_${incident.id}.md`;
-      document.body.appendChild(a);
-      a.click();
-      document.body.removeChild(a);
-      URL.revokeObjectURL(url);
+      // We no longer download automatically; user can preview and download as PDF
     } catch (err: any) {
       toast.error(`Report generation failed: ${err.message || err}`, { id: toastId });
     } finally {
@@ -152,7 +147,7 @@ export function IncidentDetail() {
     );
   }
 
-  const sevColor = severityColors[incident.severity.toLowerCase()] || '#6b7280';
+  const sevColor = severityColors[incident.severity?.toLowerCase()] || '#6b7280';
 
   return (
     <div className="space-y-6">
@@ -187,7 +182,7 @@ export function IncidentDetail() {
             </span>
             <span
               className={`text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded border ${
-                statusColors[incident.status.toLowerCase()] || 'text-slate-400 border-slate-700 bg-slate-800'
+                statusColors[incident.status?.toLowerCase()] || 'text-slate-400 border-slate-700 bg-slate-800'
               }`}
             >
               {incident.status}
@@ -241,6 +236,10 @@ export function IncidentDetail() {
           )}
         </div>
       </div>
+
+      {incident.triage_data && (
+        <TriageScoreCard triage={incident.triage_data} />
+      )}
 
       {/* Threat Timeline progression bar */}
       <div className="bg-slate-900/60 border border-slate-800/60 backdrop-blur-md rounded-2xl p-6 shadow-xl space-y-4">
@@ -318,6 +317,20 @@ export function IncidentDetail() {
         </div>
       </div>
 
+      {/* Threat Graph Visualization */}
+      <div className="bg-slate-900/60 border border-slate-800/60 backdrop-blur-md rounded-2xl p-6 shadow-xl space-y-4">
+        <div className="flex items-center space-x-2.5 border-b border-slate-800/60 pb-4">
+          <span className="flex h-8 w-8 items-center justify-center rounded-xl bg-indigo-500/10 text-indigo-400 border border-indigo-500/20">
+            <Zap className="h-4 w-4" />
+          </span>
+          <div>
+            <h2 className="font-bold text-slate-200">Interactive Threat Graph & Blast Radius</h2>
+            <p className="text-xs text-slate-500 mt-0.5">Causal risk propagation across entity property graph</p>
+          </div>
+        </div>
+        <ThreatGraph incidentId={incident.id} />
+      </div>
+
       {/* Grid: Correlation Timeline (2/3) & AI Narrative (1/3) */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         {/* Core Timeline Events (2/3) */}
@@ -335,7 +348,7 @@ export function IncidentDetail() {
           {/* Vertical Timeline strip */}
           <div className="relative border-l border-slate-800 pl-6 ml-3 space-y-8">
             {incident.timeline?.map((evt, idx) => {
-              const itemSev = evt.severity.toLowerCase() as Severity;
+              const itemSev = (evt.severity || 'low').toLowerCase() as Severity;
               const dotColor = severityColors[itemSev] || '#6b7280';
               return (
                 <div key={idx} className="relative group">
@@ -483,7 +496,7 @@ export function IncidentDetail() {
                 incident.response_actions_taken.map((act: ResponseAction, idx) => (
                   <div key={idx} className="flex justify-between items-start text-xs border-b border-slate-900 pb-2">
                     <div>
-                      <p className="font-bold text-slate-300 font-mono uppercase">{act.action_type.replace('_', ' ')}</p>
+                      <p className="font-bold text-slate-300 font-mono uppercase">{(act.action_type || 'unknown').replace('_', ' ')}</p>
                       <p className="text-[10px] text-slate-500 font-mono mt-0.5">{act.target}</p>
                     </div>
                     <span className="text-[10px] font-bold text-emerald-400 uppercase font-mono bg-emerald-500/10 border border-emerald-500/20 px-2 py-0.5 rounded">
@@ -514,13 +527,13 @@ export function IncidentDetail() {
               </button>
             </div>
 
-            <div className="p-6 overflow-y-auto font-sans text-slate-300 text-sm leading-relaxed whitespace-pre-wrap select-text max-h-[50vh] scrollbar-thin bg-black/20">
+            <div id="report-content-to-pdf" className="p-6 overflow-y-auto font-sans text-slate-300 text-sm leading-relaxed whitespace-pre-wrap select-text max-h-[50vh] scrollbar-thin bg-black/20">
               {reportContent}
             </div>
 
             <div className="p-6 border-t border-slate-800 bg-slate-950/40 flex items-center justify-between gap-4">
               <p className="text-xs text-slate-500 font-mono">
-                Report generated via SentinelAI L2 Reasoning Engine
+                Report generated via SHIELDX L2 Reasoning Engine
               </p>
               <button
                 onClick={() => {
@@ -528,7 +541,7 @@ export function IncidentDetail() {
                   const url = URL.createObjectURL(blob);
                   const a = document.createElement('a');
                   a.href = url;
-                  a.download = `SentinelAI_Report_${incident.id}.md`;
+                  a.download = `SHIELDX_Report_${incident.id}.md`;
                   document.body.appendChild(a);
                   a.click();
                   document.body.removeChild(a);

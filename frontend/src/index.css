@@ -419,3 +419,24 @@ input:focus, select:focus, textarea:focus {
 ::selection {
   background: rgba(59, 130, 246, 0.3);
 }
+
+.flash-green {
+  animation: flashGreen 1s ease;
+}
+
+@keyframes flashGreen {
+  0%   { box-shadow: 0 0 0 rgba(74, 226, 144, 0); }
+  50%  { box-shadow: 0 0 20px rgba(74, 226, 144, 0.6); }
+  100% { box-shadow: 0 0 0 rgba(74, 226, 144, 0); }
+}
+
+.health-bar {
+  height: 4px;
+  background: #1a1a2e;
+  border-radius: 2px;
+  margin-top: 8px;
+  overflow: hidden;
+}
+
+.indicator-on  { color: #4AE290; font-size: 10px; margin-right: 8px; font-weight: bold; }
+.indicator-off { color: #E24A4A; font-size: 10px; margin-right: 8px; font-weight: bold; opacity: 0.5; }

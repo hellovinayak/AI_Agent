@@ -41,6 +41,8 @@ export const api = {
 
   getAlert: (id: string) => request<Alert>(`/api/alerts/${id}`),
 
+  getRiskyUsers: () => request<{ user: string; risk_score: number; alert_count: number }[]>('/api/alerts/risky-users'),
+
   getIncidents: (page = 1, pageSize = 20) => {
     const params = new URLSearchParams({
       page: page.toString(),
@@ -108,16 +110,22 @@ export const api = {
     method: 'POST',
   }),
 
+  simulateBenign: () => request<{ job_id: string; status: string; scenario: string }>('/api/simulate/benign', {
+    method: 'POST',
+  }),
+
   // AI Reasoning & Analysis
   analyzeAlert: (alertId: string) => request<AIAnalysis>('/api/ai/analyze', {
     method: 'POST',
     body: JSON.stringify({ alert_id: alertId }),
   }),
 
-  chatWithAI: (message: string, context?: { incident_id?: string }) => request<{ reply: string; context_used: any[] }>('/api/ai/chat', {
+  chatWithAI: (message: string, context?: { incident_id?: string }) => request<{ reply: string; context_used: any[]; provider?: string }>('/api/ai/chat', {
     method: 'POST',
     body: JSON.stringify({ message, context }),
   }),
+  
+  getAiConfig: () => request<{ provider: string; openai_configured: boolean; claude_configured: boolean }>('/api/ai/config'),
 
   // Responder Actions
   executeAction: (actionType: string, target: string, incidentId?: string, alertId?: string) => request<ResponseAction>('/api/respond/action', {

@@ -8,7 +8,19 @@ import { api } from '../services/api';
 import { ChatMessage } from '../types';
 
 export function AICopilot() {
-  const [messages, setMessages] = useState<ChatMessage[]>([]);
+  const [messages, setMessages] = useState<ChatMessage[]>(() => {
+    try {
+      const saved = localStorage.getItem('shieldx_chat_history');
+      return saved ? JSON.parse(saved) : [];
+    } catch {
+      return [];
+    }
+  });
+  
+  useEffect(() => {
+    localStorage.setItem('shieldx_chat_history', JSON.stringify(messages));
+  }, [messages]);
+
   const [input, setInput] = useState('');
   const [loading, setLoading] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
@@ -53,6 +65,7 @@ export function AICopilot() {
         role: 'assistant',
         content: response.reply,
         timestamp: new Date().toLocaleTimeString(),
+        provider: response.provider || 'unknown',
       };
       
       setMessages((prev) => [...prev, assistantMessage]);
@@ -75,9 +88,20 @@ export function AICopilot() {
             Interactive, context-aware cybersecurity LLM copilot grounded with your current SIEM alerts database.
           </p>
         </div>
-        <div className="flex items-center space-x-2 bg-indigo-500/10 border border-indigo-500/20 text-indigo-400 rounded-xl px-4 py-2 text-xs font-semibold select-none">
-          <Sparkles className="h-3.5 w-3.5" />
-          <span>Real-time Context Bound</span>
+        <div className="flex items-center space-x-3">
+          <div className="flex items-center space-x-2 bg-indigo-500/10 border border-indigo-500/20 text-indigo-400 rounded-xl px-4 py-2 text-xs font-semibold select-none">
+            <Sparkles className="h-3.5 w-3.5" />
+            <span>Real-time Context Bound</span>
+          </div>
+          <button
+            onClick={() => {
+              setMessages([]);
+              localStorage.removeItem('shieldx_chat_history');
+            }}
+            className="px-3 py-1.5 text-xs font-semibold text-slate-400 hover:text-red-400 bg-slate-900/50 hover:bg-red-500/10 border border-slate-800 hover:border-red-500/30 rounded-lg transition-colors"
+          >
+            Clear History
+          </button>
         </div>
       </div>
 
@@ -141,11 +165,24 @@ export function AICopilot() {
                           {React.createElement(reactMarkdown as any, {}, msg.content)}
                         </div>
                       )}
-                      <span className={`text-[9px] font-mono mt-2 block text-right select-none ${
-                        isUser ? 'text-white/40' : 'text-slate-500'
-                      }`}>
-                        {msg.timestamp}
-                      </span>
+                      <div className="flex justify-between items-center mt-2 border-t border-slate-800/50 pt-2">
+                        {!isUser && msg.provider && (
+                          <span className={`text-[9px] font-mono select-none px-1.5 py-0.5 rounded ${
+                            msg.provider === 'mock' 
+                              ? 'bg-amber-500/10 text-amber-500 border border-amber-500/20' 
+                              : msg.provider === 'free-gpt-4o-mini'
+                              ? 'bg-blue-500/10 text-blue-400 border border-blue-500/20'
+                              : 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20'
+                          }`}>
+                            Model: {msg.provider.toUpperCase()}
+                          </span>
+                        )}
+                        <span className={`text-[9px] font-mono select-none ${
+                          isUser ? 'text-white/40 ml-auto' : 'text-slate-500'
+                        }`}>
+                          {msg.timestamp}
+                        </span>
+                      </div>
                     </div>
                   </div>
                 );

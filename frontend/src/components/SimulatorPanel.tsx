@@ -101,6 +101,13 @@ export function SimulatorPanel() {
       color: 'from-rose-600 to-pink-600 shadow-rose-950/40',
       action: api.simulateHoneypot,
     },
+    {
+      id: 'benign',
+      name: 'Simulate Benign Traffic',
+      icon: Users,
+      color: 'from-emerald-500 to-green-500 shadow-emerald-950/40',
+      action: api.simulateBenign,
+    },
   ];
 
   const handleSimulate = async (scenario: typeof scenarios[0]) => {

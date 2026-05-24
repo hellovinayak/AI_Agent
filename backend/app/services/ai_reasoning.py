@@ -506,7 +506,7 @@ def _mock_det009(alert: Alert) -> AIAnalysis:
             f"novel attack vector or an insider threat operating outside typical parameters."
         ),
         narrative=(
-            f"SentinelAI has detected a completely novel anomaly. A threat actor or insider "
+            f"SHIELDX has detected a completely novel anomaly. A threat actor or insider "
             f"is performing actions that bypass traditional signature-based detections. "
             f"By correlating unusual timestamps with abnormal payload sizes and API endpoints, "
             f"we've identified activity that falls into the 1% most anomalous events in the dataset. "
@@ -563,7 +563,7 @@ _MOCK_GENERATORS: Dict[str, Any] = {
 # ═════════════════════════════════════════════════════════════════════════════
 
 _SYSTEM_PROMPT = """\
-You are SentinelAI, an expert Security Operations Center analyst. Analyze the
+You are SHIELDX, an expert Security Operations Center analyst. Analyze the
 security alert provided and return a JSON object with EXACTLY these keys:
 - explanation (string): Detailed technical analysis of the alert
 - narrative (string): Attacker-perspective story of the incident
@@ -741,7 +741,7 @@ async def chat(
         context_used.append(f"incident:{incident_id}")
 
     system_context = (
-        "You are SentinelAI, an AI-powered SOC assistant. "
+        "You are SHIELDX, an AI-powered SOC assistant. "
         "Answer the analyst's question using the context provided.\n\n"
         + "\n\n".join(context_parts)
     )
@@ -770,7 +770,7 @@ async def chat(
                 resp.raise_for_status()
                 data = resp.json()
                 reply = data["choices"][0]["message"]["content"]
-                return {"reply": reply, "context_used": context_used}
+                return {"reply": reply, "context_used": context_used, "provider": "openai"}
         except Exception as exc:
             logger.warning("OpenAI chat failed (will try keyless fallback): %s", exc)
 
@@ -794,7 +794,7 @@ async def chat(
                 resp.raise_for_status()
                 data = resp.json()
                 reply = data["content"][0]["text"]
-                return {"reply": reply, "context_used": context_used}
+                return {"reply": reply, "context_used": context_used, "provider": "claude"}
         except Exception as exc:
             logger.warning("Claude chat failed (will try keyless fallback): %s", exc)
 
@@ -802,11 +802,11 @@ async def chat(
     free_reply = await _call_free_ai(message, system_context)
     if free_reply:
         # We append a small badge noting that the keyless fallback handled it
-        return {"reply": free_reply, "context_used": context_used}
+        return {"reply": free_reply, "context_used": context_used, "provider": "free-gpt-4o-mini"}
 
     # ── Try Mock Local Fallback (Ultimate safety net) ────────────────────
     mock_reply = _generate_mock_chat_reply(message, recent_alerts, risk_score)
-    return {"reply": mock_reply, "context_used": context_used}
+    return {"reply": mock_reply, "context_used": context_used, "provider": "mock"}
 
 
 def _generate_mock_chat_reply(
@@ -821,7 +821,7 @@ def _generate_mock_chat_reply(
     # 1. GREETINGS
     if msg_lower in ("hello", "hi", "hey", "greetings", "yo", "sup"):
         return (
-            "Hello! I am SentinelAI, your virtual autonomous SOC analyst. 🛡️\n\n"
+            "Hello! I am SHIELDX, your virtual autonomous SOC analyst. 🛡️\n\n"
             f"Currently, I am tracking **{alert_count} active security alert(s)** with an environment risk index of **{risk_score:.0f}/100**.\n\n"
             "How can I assist you with your threat hunting, log analysis, or mitigation playbooks today? "
             "You can ask me to explain a specific threat, check if customer data was exposed, or recommend containment steps."
@@ -877,7 +877,7 @@ def _generate_mock_chat_reply(
     # 6. HELP / CAPABILITIES
     if "help" in msg_lower or "what can" in msg_lower or "capabilities" in msg_lower:
         return (
-            "I'm **SentinelAI**, your virtual autonomous L2 SOC analyst! 🤖\n\n"
+            "I'm **SHIELDX**, your virtual autonomous L2 SOC analyst! 🤖\n\n"
             "I am grounded in your local telemetry database and can help you with:\n"
             "• 🔍 **Threat Diagnostics** — Explain security alerts in simple terms.\n"
             "• 🎯 **Attack Chains Mapping** — Connect the dots across logins and command logs.\n"
@@ -1011,7 +1011,7 @@ def _generate_mock_report_content(incident: Dict[str, Any]) -> str:
 
     mitre_str = ", ".join(mitre_tactics) if mitre_tactics else "Credential Access, Initial Access"
 
-    return f"""# SENTINELAI INCIDENT INVESTIGATION REPORT
+    return f"""# SHIELDX INCIDENT INVESTIGATION REPORT
 **INCIDENT ID:** {incident_id}  
 **TITLE:** {title}  
 **SEVERITY:** {severity.upper()}  
@@ -1021,7 +1021,7 @@ def _generate_mock_report_content(incident: Dict[str, Any]) -> str:
 ---
 
 ### 1. Executive Summary
-SentinelAI correlated anomalous patterns involving account credentials and source IPs into a consolidated threat incident. 
+SHIELDX correlated anomalous patterns involving account credentials and source IPs into a consolidated threat incident. 
 This incident indicates unauthorized system access targeting username `{user}` from origin IP `{ip}`, which is highly likely to be a credential-compromise campaign.
 
 ### 2. Technical Timeline

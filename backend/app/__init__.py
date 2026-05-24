@@ -1,1 +1,1 @@
-"""SentinelAI — AI-Powered Security Operations Center Backend."""
+"""SHIELDX — AI-Powered Security Operations Center Backend."""
