@@ -155,8 +155,8 @@ def _compute_velocity_score(events: list, now: float) -> float:
     
     # Adaptive weights: as global risk score increases, the system becomes more sensitive
     # If risk is 0, multiplier is 1x. If risk is 100, multiplier is 2x.
-    from app.services.detection_engine import _base_risk_score
-    risk_multiplier = 1.0 + (_base_risk_score / 100.0)
+    current_risk = get_risk_score()
+    risk_multiplier = 1.0 + (current_risk / 100.0)
     
     score = ((w2m * 0.5) + (w1h * 0.1) + (w24h * 0.02)) * risk_multiplier
     return score
