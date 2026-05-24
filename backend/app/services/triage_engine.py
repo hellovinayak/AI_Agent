@@ -59,13 +59,14 @@ class TriageEngine:
         breakdown['severity_composition'] = sev_score
 
         # ── Factor 2: Kill chain completion ────────────────────────────
-        kc_score = incident.get('kill_chain_completion', 0) * 25
+        tactics = incident.get('mitre_tactics', [])
+        kc_score = min(len(tactics) / 4.0, 1.0) * 25
         score += kc_score
         breakdown['kill_chain_completion'] = round(kc_score, 1)
 
         # ── Factor 3: Persona deviation ────────────────────────────────
         persona_max = max(
-            (persona_scores.get(a.get('user_id'), {}).get('persona_score', 0) for a in alerts),
+            (persona_scores.get(a.get('user'), {}).get('persona_score', 0) for a in alerts),
             default=0
         )
         persona_contrib = persona_max * 15
@@ -73,15 +74,15 @@ class TriageEngine:
         breakdown['persona_deviation'] = round(persona_contrib, 1)
 
         # ── Factor 4: IOC confirmation ─────────────────────────────────
-        ioc_confirmed = any(a.get('ioc_confirmed') for a in alerts)
+        ioc_confirmed = any(a.get('confidence_score', 0) >= 0.8 or 'THREAT INTEL' in str(a.get('raw_message', '')) for a in alerts)
         ioc_score = 15 if ioc_confirmed else 0
         score += ioc_score
         breakdown['ioc_confirmed'] = ioc_score
 
         # ── Factor 5: Asset criticality ────────────────────────────────
-        targets = set(a.get('user_id') for a in alerts if a.get('user_id'))
+        targets = set(a.get('user') for a in alerts if a.get('user'))
         admin_count = sum(1 for t in targets if any(k in str(t).lower() for k in ['admin', 'root', 'svc', 'service']))
-        asset_score = min(admin_count * 5, 15)
+        asset_score = min(admin_count * 15, 15)  # Make it 15 if any admin is involved
         score += asset_score
         breakdown['asset_criticality'] = asset_score
 

@@ -624,6 +624,7 @@ async def _try_group_into_incident(alert: Alert) -> Optional[str]:
         "affected_ip": alert.ip_address,
         "alert_ids": json.dumps(all_alert_ids),
         "timeline": json.dumps(timeline_events),
+        "mitre_tactics": list(mitre_tactics_set),
         "ai_narrative": (
         f"Incident correlates {len(all_alert_ids)} alerts involving user {alert.user}. "
         f"Initial severity assessment is {max_sev}."
