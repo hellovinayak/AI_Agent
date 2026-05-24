@@ -38,7 +38,7 @@ export function Sidebar() {
             </span>
             {!sidebarCollapsed && (
               <span className="font-bold text-lg tracking-wide text-transparent bg-clip-text bg-gradient-to-r from-white via-slate-200 to-slate-400">
-                Sentinel<span className="text-indigo-400 font-extrabold">AI</span>
+                SHIELDX
               </span>
             )}
           </div>
