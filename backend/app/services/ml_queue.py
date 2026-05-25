@@ -26,14 +26,14 @@ class MLAnalysisQueue:
 
     def _process(self):
         # We need to import inside the thread to avoid circular imports if any
-        from app.services import zero_knowledge_engine
+        from app.services import zero_day_engine
         from app.services.detection_engine import _fire_zero_day_alert
         
         while True:
             log_entry = self.queue.get()
             try:
-                # The PyTorch/HDBSCAN synchronous blocking call
-                alert = zero_knowledge_engine.analyze_for_zero_day(log_entry)
+                # The sklearn IsolationForest blocking call
+                alert = zero_day_engine.analyze_for_zero_day(log_entry)
                 if alert and self._loop:
                     # It found a zero-day anomaly! Send it to the detection engine
                     # Run it safely on the main event loop
